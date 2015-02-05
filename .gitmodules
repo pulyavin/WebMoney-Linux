@@ -1,0 +1,6 @@
+[submodule "vendors/console"]
+	path = vendors/console
+	url = https://github.com/pulyavin/PHP-Linux-Console.git
+[submodule "vendors/wmxml"]
+	path = vendors/wmxml
+	url = https://github.com/pulyavin/WebMoney-XML-API-PHP.git
