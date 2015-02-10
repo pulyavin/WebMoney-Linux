@@ -96,10 +96,10 @@ class shell {
 		$this->console
 			->text("\t")
 			->style('green', 'bold')
-			->text("events")
+			->text("events [nums]")
 			->style()
 			->text(": ")
-			->text("просмотреть новые события")
+			->text("просмотреть новые события или вывести nums-последних событий")
 			->stdout(null, true);
 
 		$this->console

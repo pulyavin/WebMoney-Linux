@@ -79,6 +79,7 @@ class commands {
 	 * refreshCommand(): обновление всех данных
 	 */
 	public function refreshCommand() {
+		$time = microtime(true);
 		# это первый запуск и сохранение списка кошельков
 		if (empty($this->system['is_syncpurses'])) {
 			$this->initCommand();
@@ -276,25 +277,27 @@ class commands {
 						:rest
 					)
 				");
-				$insert->bindValue(":id", $element['id']);
-				$insert->bindValue(":pursesrc", $element['pursesrc']);
-				$insert->bindValue(":pursedest", $element['pursedest']);
-				$insert->bindValue(":type", $element['type']);
-				$insert->bindValue(":purse", $purse['pursename']);
-				$insert->bindValue(":corrpurse", $element['corrpurse']);
-				$insert->bindValue(":amount", $element['amount']);
-				$insert->bindValue(":comiss", $element['comiss']);
-				$insert->bindValue(":opertype", $element['opertype']);
-				$insert->bindValue(":wminvid", $element['wminvid']);
-				$insert->bindValue(":orderid", $element['orderid']);
-				$insert->bindValue(":tranid", $element['tranid']);
-				$insert->bindValue(":period", $element['period']);
-				$insert->bindValue(":desc", $element['desc']);
-				$insert->bindValue(":datecrt", self::convertDate($element['datecrt']));
-				$insert->bindValue(":dateupd", self::convertDate($element['dateupd']));
-				$insert->bindValue(":corrwm", $element['corrwm']);
-				$insert->bindValue(":rest", $element['rest']);
-				$insert->execute();
+				$bind = [
+					"id"        => $element['id'],
+					"pursesrc"  => $element['pursesrc'],
+					"pursedest" => $element['pursedest'],
+					"type"      => $element['type'],
+					"purse"     => $purse['pursename'],
+					"corrpurse" => $element['corrpurse'],
+					"amount"    => $element['amount'],
+					"comiss"    => $element['comiss'],
+					"opertype"  => $element['opertype'],
+					"wminvid"   => $element['wminvid'],
+					"orderid"   => $element['orderid'],
+					"tranid"    => $element['tranid'],
+					"period"    => $element['period'],
+					"desc"      => $element['desc'],
+					"datecrt"   => self::convertDate($element['datecrt']),
+					"dateupd"   => self::convertDate($element['dateupd']),
+					"corrwm"    => $element['corrwm'],
+					"rest"      => $element['rest'],
+				];
+				$insert->execute($bind);
 
 				# если это приходная операция - создаём событие
 				if ($element['type'] == wmxml::TRANSAC_IN) {
@@ -416,22 +419,23 @@ class commands {
 						:wmtranid
 					)
 				");
-
-				$insert->bindValue(":id", $element['id']);
-				$insert->bindValue(":orderid", $element['orderid']);
-				$insert->bindValue(":storepurse", $element['storepurse']);
-				$insert->bindValue(":customerwmid", $element['customerwmid']);
-				$insert->bindValue(":customerpurse", $element['customerpurse']);
-				$insert->bindValue(":amount", $element['amount']);
-				$insert->bindValue(":datecrt", self::convertDate($element['datecrt']));
-				$insert->bindValue(":dateupd", self::convertDate($element['dateupd']));
-				$insert->bindValue(":state", $element['state']);
-				$insert->bindValue(":address", $element['address']);
-				$insert->bindValue(":desc", $element['desc']);
-				$insert->bindValue(":period", $element['period']);
-				$insert->bindValue(":expiration", $element['expiration']);
-				$insert->bindValue(":wmtranid", $element['wmtranid']);
-				$insert->execute();
+				$bind = [
+					"id"            => $element['id'],
+					"orderid"       => $element['orderid'],
+					"storepurse"    => $element['storepurse'],
+					"customerwmid"  => $element['customerwmid'],
+					"customerpurse" => $element['customerpurse'],
+					"amount"        => $element['amount'],
+					"datecrt"       => self::convertDate($element['datecrt']),
+					"dateupd"       => self::convertDate($element['dateupd']),
+					"state"         => $element['state'],
+					"address"       => $element['address'],
+					"desc"          => $element['desc'],
+					"period"        => $element['period'],
+					"expiration"    => $element['expiration'],
+					"wmtranid"      => $element['wmtranid'],
+				];
+				$insert->execute($bind);
 			}
 
 			# если не нашли за чем следить, то дело за последней итерацией
@@ -464,8 +468,10 @@ class commands {
 		$list = $this->wmxml->xml10(null, 0, $this->system['xml10date']);
 
 		foreach ($list as $element) {
-			# фиксируем временную отметку для дальнейшей синхрониации
-			# следим за неоплаченными счетами
+			# нам необходимо найти дату, от которой мы будем следить
+			# счёт должен быть неоплаченным
+			# отслеживаемой даты ещё не должно быть
+			# счёт не должен быть просроченным по времени
 			if (
 				$element['state'] == wmxml::STATE_NOPAY
 				&&
@@ -555,20 +561,22 @@ class commands {
 					:wmtranid
 				)
 			");
-			$prepare->bindValue(":id", $element['id']);
-			$prepare->bindValue(":orderid", $element['orderid']);
-			$prepare->bindValue(":storewmid", $element['storewmid']);
-			$prepare->bindValue(":storepurse", $element['storepurse']);
-			$prepare->bindValue(":amount", $element['amount']);
-			$prepare->bindValue(":datecrt", self::convertDate($element['datecrt']));
-			$prepare->bindValue(":dateupd", self::convertDate($element['dateupd']));
-			$prepare->bindValue(":state", $element['state']);
-			$prepare->bindValue(":address", $element['address']);
-			$prepare->bindValue(":desc", $element['desc']);
-			$prepare->bindValue(":period", $element['period']);
-			$prepare->bindValue(":expiration", $element['expiration']);
-			$prepare->bindValue(":wmtranid", $element['wmtranid']);
-			$prepare->execute();
+			$bind = [
+				"id"         => $element['id'],
+				"orderid"    => $element['orderid'],
+				"storewmid"  => $element['storewmid'],
+				"storepurse" => $element['storepurse'],
+				"amount"     => $element['amount'],
+				"datecrt"    => self::convertDate($element['datecrt']),
+				"dateupd"    => self::convertDate($element['dateupd']),
+				"state"      => $element['state'],
+				"address"    => $element['address'],
+				"desc"       => $element['desc'],
+				"period"     => $element['period'],
+				"expiration" => $element['expiration'],
+				"wmtranid"   => $element['wmtranid'],
+			];
+			$prepare->execute($bind);
 
 			# и создаём событие, если счёт не оплаченный и время его действия не истекло
 			if (
@@ -686,31 +694,31 @@ class commands {
 		# собираем информацию о самом пользователе
 		$passport = $this->wmxml->xml11();
 		$userinfo = [
-            'nickname' => $passport['userinfo']['nickname'],
-            'fname' => $passport['userinfo']['fname'],
-            'iname' => $passport['userinfo']['iname'],
-            'oname' => $passport['userinfo']['oname'],
-            'bdate' => $passport['userinfo']['bdate_'],
-            'phone' => $passport['userinfo']['phone'],
-            'email' => $passport['userinfo']['email'],
-            'web' => $passport['userinfo']['web'],
-            'icq' => $passport['userinfo']['icq'],
-            'country' => $passport['userinfo']['country'],
-            'city' => $passport['userinfo']['city'],
-            'region' => $passport['userinfo']['region'],
-            'zipcode' => $passport['userinfo']['zipcode'],
-            'adres' => $passport['userinfo']['adres'],
-            'pnomer' => $passport['userinfo']['pnomer'],
-            'pdate' => $passport['userinfo']['pdate_'],
-            'pcountry' => $passport['userinfo']['pcountry'],
-            'pcity' => $passport['userinfo']['pcity'],
-            'pcitid' => $passport['userinfo']['pcitid'],
-            'pbywhom' => $passport['userinfo']['pbywhom'],
-            'tid' => $passport['attestat']['tid'],
-            'datecrt' => $passport['attestat']['datecrt'],
-            'dateupd' => $passport['attestat']['dateupd'],
-            'regnickname' => $passport['attestat']['regnickname'],
-            'regwmid' => $passport['attestat']['regwmid'],
+			'nickname'    => $passport['userinfo']['nickname'],
+			'fname'       => $passport['userinfo']['fname'],
+			'iname'       => $passport['userinfo']['iname'],
+			'oname'       => $passport['userinfo']['oname'],
+			'bdate'       => $passport['userinfo']['bdate_'],
+			'phone'       => $passport['userinfo']['phone'],
+			'email'       => $passport['userinfo']['email'],
+			'web'         => $passport['userinfo']['web'],
+			'icq'         => $passport['userinfo']['icq'],
+			'country'     => $passport['userinfo']['country'],
+			'city'        => $passport['userinfo']['city'],
+			'region'      => $passport['userinfo']['region'],
+			'zipcode'     => $passport['userinfo']['zipcode'],
+			'adres'       => $passport['userinfo']['adres'],
+			'pnomer'      => $passport['userinfo']['pnomer'],
+			'pdate'       => $passport['userinfo']['pdate_'],
+			'pcountry'    => $passport['userinfo']['pcountry'],
+			'pcity'       => $passport['userinfo']['pcity'],
+			'pcitid'      => $passport['userinfo']['pcitid'],
+			'pbywhom'     => $passport['userinfo']['pbywhom'],
+			'tid'         => $passport['attestat']['tid'],
+			'datecrt'     => $passport['attestat']['datecrt'],
+			'dateupd'     => $passport['attestat']['dateupd'],
+			'regnickname' => $passport['attestat']['regnickname'],
+			'regwmid'     => $passport['attestat']['regwmid'],
 		];
 
 		foreach ($userinfo as $name => $value) {
