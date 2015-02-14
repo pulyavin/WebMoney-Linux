@@ -1,6 +1,7 @@
 config.ini
 base.sqlite
 scheme
+.idea
 test.php
 wmsigner
 webmoney.sublime-project
