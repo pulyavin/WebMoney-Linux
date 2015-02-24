@@ -4,7 +4,7 @@ class shell {
 	private $commands;
 	private $console;
 
-	private function __construct($commands, $console) {
+	private function __construct(commands $commands, console $console) {
 		$this->commands = $commands;
 		$this->console = $console;
 	}
