@@ -35,6 +35,7 @@ $pdo = new PDO(
 		PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
 	]
 );
+$pdo->exec("SET NAMES UTF8");
 
 # создаём объект ядра комманд
 $commands = new commands($wmxml, $pdo);
