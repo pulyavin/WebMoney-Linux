@@ -19,9 +19,9 @@ SET time_zone = "+00:00";
 
 CREATE TABLE IF NOT EXISTS `bl` (
   `time` int(11) unsigned NOT NULL,
-  `rank` int(11) unsigned NOT NULL,
+  `rank` int(11) unsigned DEFAULT NULL,
   PRIMARY KEY (`time`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- --------------------------------------------------------
 
@@ -34,9 +34,9 @@ CREATE TABLE IF NOT EXISTS `events` (
   `time` int(10) unsigned NOT NULL,
   `is_hidden` tinyint(3) unsigned NOT NULL,
   `type` tinyint(3) unsigned NOT NULL,
-  `desc` text NOT NULL,
-  `expiration` int(10) unsigned NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+  `description` text CHARACTER SET utf8 NOT NULL,
+  `expiration` int(10) unsigned DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- --------------------------------------------------------
 
@@ -52,13 +52,13 @@ CREATE TABLE IF NOT EXISTS `invoices` (
   `amount` decimal(8,2) NOT NULL,
   `datecrt` int(10) unsigned NOT NULL,
   `dateupd` int(10) unsigned NOT NULL,
-  `state` tinyint(3) unsigned NOT NULL,
-  `address` text CHARACTER SET utf8 NOT NULL,
-  `desc` text CHARACTER SET utf8 NOT NULL,
-  `period` tinyint(3) unsigned NOT NULL,
-  `expiration` tinyint(3) unsigned NOT NULL,
-  `wmtranid` int(10) unsigned NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+  `state` tinyint(3) unsigned DEFAULT NULL,
+  `address` text CHARACTER SET utf8,
+  `description` text CHARACTER SET utf8,
+  `period` tinyint(3) unsigned DEFAULT NULL,
+  `expiration` tinyint(3) unsigned DEFAULT NULL,
+  `wmtranid` int(10) unsigned DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- --------------------------------------------------------
 
@@ -75,12 +75,12 @@ CREATE TABLE IF NOT EXISTS `outvoices` (
   `amount` decimal(8,2) NOT NULL,
   `datecrt` int(10) unsigned NOT NULL,
   `dateupd` int(10) unsigned NOT NULL,
-  `state` tinyint(3) unsigned NOT NULL,
-  `address` text NOT NULL,
-  `desc` text NOT NULL,
-  `period` tinyint(3) unsigned NOT NULL,
-  `expiration` tinyint(3) unsigned NOT NULL,
-  `wmtranid` int(10) unsigned NOT NULL,
+  `state` tinyint(3) unsigned DEFAULT NULL,
+  `address` text DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `period` tinyint(3) unsigned DEFAULT NULL,
+  `expiration` tinyint(3) unsigned DEFAULT NULL,
+  `wmtranid` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
@@ -93,9 +93,9 @@ CREATE TABLE IF NOT EXISTS `outvoices` (
 CREATE TABLE IF NOT EXISTS `purses` (
   `id` tinyint(3) unsigned NOT NULL AUTO_INCREMENT,
   `pursename` varchar(13) NOT NULL,
-  `desc` varchar(100) NOT NULL,
+  `description` varchar(100) DEFAULT NULL,
   `amount` decimal(8,2) unsigned NOT NULL,
-  `amount_last` decimal(8,2) unsigned NOT NULL,
+  `amount_last` decimal(8,2) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;
 
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS `purses_times` (
 
 CREATE TABLE IF NOT EXISTS `system` (
   `name` varchar(15) NOT NULL,
-  `value` text NOT NULL,
+  `value` text,
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS `system` (
 
 CREATE TABLE IF NOT EXISTS `tl` (
   `time` int(11) unsigned NOT NULL,
-  `rank` int(11) unsigned NOT NULL,
+  `rank` int(11) unsigned DEFAULT NULL,
   PRIMARY KEY (`time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
@@ -151,16 +151,15 @@ CREATE TABLE IF NOT EXISTS `transactions` (
   `amount` decimal(8,2) unsigned NOT NULL,
   `comiss` decimal(6,2) unsigned NOT NULL,
   `opertype` tinyint(3) unsigned NOT NULL,
-  `wminvid` int(10) unsigned NOT NULL,
+  `wminvid` int(10) unsigned DEFAULT NULL,
   `orderid` int(11) NOT NULL,
-  `tranid` int(10) unsigned NOT NULL,
-  `period` tinyint(3) unsigned NOT NULL,
-  `desc` text NOT NULL,
+  `tranid` int(10) unsigned DEFAULT NULL,
+  `period` tinyint(3) unsigned DEFAULT NULL,
+  `description` text DEFAULT NULL,
   `datecrt` int(10) unsigned NOT NULL,
   `dateupd` int(10) unsigned NOT NULL,
   `corrwm` varchar(13) NOT NULL,
-  `rest` decimal(8,2) unsigned NOT NULL,
-  PRIMARY KEY (`id`)
+  `rest` decimal(8,2) unsigned NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- --------------------------------------------------------
@@ -171,6 +170,6 @@ CREATE TABLE IF NOT EXISTS `transactions` (
 
 CREATE TABLE IF NOT EXISTS `userinfo` (
   `name` varchar(15) NOT NULL,
-  `value` text NOT NULL,
+  `value` text,
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;

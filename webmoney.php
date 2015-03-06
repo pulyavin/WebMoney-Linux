@@ -12,6 +12,8 @@ require_once($config['vendors']['wmxml']);
 # подгружаем библиотеку console 
 require_once($config['vendors']['console']);
 
+use \pulyavin\wmxml as wmxml;
+
 # создаём объект WebMoney XML API
 $wmxml = new wmxml(
 	"classic",

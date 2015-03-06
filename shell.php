@@ -1,5 +1,8 @@
 <?php
 class shell {
+	// представление даты
+	public static $datePattern = "Ymd H:i:s";
+
 	private static $sceleton;
 	private $commands;
 	private $console;
@@ -236,7 +239,7 @@ class shell {
 				->column(6, "left")
 
 				->style(null, 'bold')
-				->text($purse['desc'])
+				->text($purse['description'])
 				->style()
 				->column(20, "left")
 
@@ -287,7 +290,7 @@ class shell {
 		$at_purse	= $this->console->stdin("Из кошелька");
 		$to_purse	= $this->console->stdin("На кошелёк");
 		$amount		= $this->console->stdin("Сумма перевода");
-		$desc		= $this->console->stdin("Описание перевода");
+		$desc       = $this->console->stdin("Описание перевода");
 
 		$protection = $this->console->stdin("С протекцией (y)");
 		$protect_period = 0;
@@ -453,7 +456,7 @@ class shell {
 				->text("\t")
 				->text("Описание: ")
 				->style(null, 'bold')
-				->text($command['data']['desc'])
+				->text($command['data']['description'])
 				->style()
 				->stdout(null, true);
 		}
@@ -532,9 +535,9 @@ class shell {
 			$this->console
 				->text("]")
 				->column(15)
-				->text($event['date'])
+				->text(self::getDate($event['time']))
 				->column(20)
-				->text($event['desc'])
+				->text($event['description'])
 				->stdout(null, true);
 		}
 	}
@@ -552,5 +555,13 @@ class shell {
 			->text($message)
 			->stdout(null, true);
 	}
+
+	/**
+	 * По времени формирует дату
+	 * @param $time
+	 * @return string
+	 */
+	public static function getDate($time) {
+		return (new DateTime('@'.$time))->format(self::$datePattern);
+	}
 }
-?>

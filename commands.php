@@ -22,10 +22,10 @@ class commands
 
     /**
      * Инициализация библиотеки
-     * @param wmxml $wmxml инстанс объекта wmxml
+     * @param \pulyavin\wmxml|wmxml $wmxml $wmxml инстанс объекта wmxml
      * @param PDO $pdo инстанс объекта PDO
      */
-    public function __construct(wmxml $wmxml, PDO $pdo)
+    public function __construct(pulyavin\wmxml $wmxml, PDO $pdo)
     {
         $this->wmxml = $wmxml;
         $this->pdo = $pdo;
@@ -91,7 +91,7 @@ class commands
         foreach ($purses as $purse) {
             $sql = $this->pdo->prepare("
                 UPDATE `purses` SET
-                    `desc`          =   :desc,
+                    `description`   =   :desc,
                     `amount_last`   =   `amount`,
                     `amount`        =   :amount
                 WHERE
@@ -155,14 +155,14 @@ class commands
         while ($row = $sql->fetch(PDO::FETCH_ASSOC)) {
             $cache['invoices'][$row['id']] = $row;
         }
-        # вытаскиваем временные слепки
+        // вытаскиваем временные слепки
         $times = [];
         $sql = $this->pdo->query("SELECT * FROM `purses_times`");
         while ($row = $sql->fetch(PDO::FETCH_ASSOC)) {
-            $dates[$row['pursename']][$row['xml_id']] = $row['time'];
+            $times[$row['pursename']][$row['xml_id']] = $row['time'];
         }
 
-        # для каждого кошелька нужно посмотреть новые транзакции
+        // для каждого кошелька нужно посмотреть новые транзакции
         $sql = $this->pdo->query("SELECT * FROM `purses`");
         while ($purse = $sql->fetch(PDO::FETCH_ASSOC)) {
             # заносим обновлённые данные в слепок
@@ -172,29 +172,30 @@ class commands
             /*
                 Синхронизация транзакций
             */
-            # временная отметка, которую нужно сохранить
-            $savedate = null;
-            $lastdate = date("Ymd H:i:s"); # а вдруг не будет итераций?
+            // временная отметка, которую нужно сохранить
+            $savetime = null;
+            // временная отметка последнего элемента
+            $lasttime = null;
 
-            # запрашиваем новые транзакции
-            $list = $this->wmxml->xml3($purse['pursename'], $dates[$purse['pursename']][3]);
+            // запрашиваем новые транзакции
+            $time = ($times[$purse['pursename']][3]) ? new DateTime('@'.$times[$purse['pursename']][3]) : null;
+            $list = $this->wmxml->xml3($purse['pursename'], $time);
 
             foreach ($list as $element) {
-                # фиксируем временную отметку для дальнейшей синхрониации
-                # следим за операцией по протекции
+                // в транзакциях: следим за измением операций по протекции
                 if (
-                    $element['opertype'] == wmxml::OPERTYPE_PROTECTION
+                    $element['opertype'] == \pulyavin\wmxml::OPERTYPE_PROTECTION
                     &&
-                    empty($savedate)
+                    empty($savetime)
                 ) {
-                    # если это прям сразу первая итерация, то её и берём
-                    $savedate = empty($lastdate) ? $element['datecrt'] : $lastdate;
+                    // если это не первая итерация, то берём временной отсчёт с прошлого элемента
+                    $savetime = empty($lasttime) ? $element['datecrt']->getTimestamp() : $lasttime;
                 }
 
-                # время последней транзакции
-                $lastdate = $element['datecrt'];
+                // время последнего элемента
+                $lasttime = $element['datecrt']->getTimestamp();
 
-                # такая транзакция уже есть в базе и её статус не изменился
+                // такая транзакция уже есть в базе и её статус не изменился
                 if (
                     isset($cache['transactions'][$purse['pursename']][$element['id']])
                     &&
@@ -203,23 +204,25 @@ class commands
                     continue;
                 }
 
-                # такая транзакция уже есть в базе, но её статус изменился
+                // такая транзакция уже есть в базе, но её статус изменился
                 if (
                     isset($cache['transactions'][$purse['pursename']][$element['id']])
                     &&
                     $cache['transactions'][$purse['pursename']][$element['id']]['opertype'] != $element['opertype']
                 ) {
-                    # скрываем событие
+                    // скрываем событие
                     $prepare = $this->pdo->prepare("
                         UPDATE `events` SET
-                            `is_hide` = 1
+                            `is_hidden` = '1'
                         WHERE
                             `id` = :id
                     ");
-                    $prepare->bindValue(":id", $element['id']);
-                    $prepare->execute();
+                    $bind = [
+                        "id"        => $element['id'],
+                    ];
+                    $prepare->execute($bind);
 
-                    # обновляем саму транзакцию
+                    // обновляем саму транзакцию
                     $prepare = $this->pdo->prepare("
                         UPDATE `transactions` SET
                             `dateupd` = :dateupd,
@@ -227,15 +230,17 @@ class commands
                         WHERE
                             `id` = :id
                     ");
-                    $prepare->bindValue(":id", $element['id']);
-                    $prepare->bindValue(":dateupd", $element['dateupd']->getTimestamp());
-                    $prepare->bindValue(":opertype", $element['opertype']);
-                    $prepare->execute();
+                    $bind = [
+                        "id"        => $element['id'],
+                        "dateupd"   => $element['dateupd']->getTimestamp(),
+                        "opertype"  => $element['opertype'],
+                    ];
+                    $prepare->execute($bind);
 
                     continue;
                 }
 
-                # получается, что это новая транзакция - заносим её
+                // получается, что это новая транзакция - заносим её
                 $insert = $this->pdo->prepare("
                     INSERT INTO `transactions` (
                         `id`,
@@ -251,7 +256,7 @@ class commands
                         `orderid`,
                         `tranid`,
                         `period`,
-                        `desc`,
+                        `description`,
                         `datecrt`,
                         `dateupd`,
                         `corrwm`,
@@ -299,60 +304,66 @@ class commands
                 ];
                 $insert->execute($bind);
 
-                # если это приходная операция - создаём событие
-                if ($element['type'] == wmxml::TRANSAC_IN) {
-                    $type = ($element['opertype'] == wmxml::OPERTYPE_PROTECTION) ? self::EVENT_PROTECTION : self::EVENT_TRANSFER;
+                // если это приходная операция - создаём событие
+                if ($element['type'] == \pulyavin\wmxml::TRANSAC_IN) {
+                    $type = ($element['opertype'] == \pulyavin\wmxml::OPERTYPE_PROTECTION) ? self::EVENT_PROTECTION : self::EVENT_TRANSFER;
                     $this->addEvent($element['id'], $element['datecrt']->getTimestamp(), $element['period'], $element['desc'], $type, $element['amount'], $element['pursesrc']);
                 }
             }
 
-            # если не нашли за чем следить, то дело за последней итерацией
-            $savedate = empty($savedate) ? $lastdate : $savedate;
+            // если не нашли за чем следить, то дело за последней итерацией
+            if (empty($savetime) && !empty($lasttime)) {
+                $savetime = $lasttime;
+            }
+            // вообще не было итераций
+            else if (empty($savetime) && empty($lasttime)) {
+                $savetime = (new DateTime)->getTimestamp();
+            }
 
-            # сохраняем временную отметку, если она изменилась
-            if ($savedate != $dates[$purse['pursename']][3]) {
+            // сохраняем временную отметку, если она изменилась
+            if ($savetime != $times[$purse['pursename']][3]) {
                 $prepare = $this->pdo->prepare("
                     UPDATE `purses_times` SET
-                        `date` = :date
+                        `time` = :time
                     WHERE
                         `pursename` = :pursename
                             AND
                         `xml_id` = '3'
                 ");
-                $prepare->bindValue(":date", $savedate);
+                $prepare->bindValue(":time", $savetime);
                 $prepare->bindValue(":pursename", $purse['pursename']);
                 $prepare->execute();
             }
 
-
             /*
                 синхронизируем выписанные счета
             */
-            # временная отметка, которую нужно сохранить
-            $savedate = null;
-            $lastdate = date("Ymd H:i:s"); # а вдруг не будет итераций?
+            // временная отметка, которую нужно сохранить
+            $savetime = null;
+            // временная отметка последнего элемента
+            $lasttime = null;
 
-            # запрашиваем новые счета
-            $list = $this->wmxml->xml4($purse['pursename'], $dates[$purse['pursename']][4]);
+            // запрашиваем новые счета
+            $time = ($times[$purse['pursename']][4]) ? new DateTime('@'.$times[$purse['pursename']][4]) : null;
+            $list = $this->wmxml->xml4($purse['pursename'], $time);
 
             foreach ($list as $element) {
-                # фиксируем временную отметку для дальнейшей синхрониации
-                # следим за неоплаченными счетами
+                // в выписанных счетах: следим за неоплаченными счетами
                 if (
-                    $element['state'] == wmxml::STATE_NOPAY
+                    $element['state'] == \pulyavin\wmxml::STATE_NOPAY
                     &&
-                    (strtotime($element['datecrt']) + $element['expiration'] * 24 * 60 * 60) > time()
+                    ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > (new DateTime)->getTimestamp()
                     &&
-                    empty($savedate)
+                    empty($savetime)
                 ) {
-                    # если это прям сразу первая итерация, то её и берём
-                    $savedate = empty($lastdate) ? $element['datecrt'] : $lastdate;
+                    // если это не первая итерация, то берём временной отсчёт с прошлого элемента
+                    $savetime = empty($lasttime) ? $element['datecrt']->getTimestamp() : $lasttime;
                 }
 
-                # время последней транзакции
-                $lastdate = $element['datecrt'];
+                // время последнего элемента
+                $lasttime = $element['datecrt']->getTimestamp();
 
-                # такой счёт уже есть в базе и его статус не изменился
+                // такой счёт уже есть в базе и его статус не изменился
                 if (
                     isset($cache['outvoices'][$purse['pursename']][$element['id']])
                     &&
@@ -361,13 +372,13 @@ class commands
                     continue;
                 }
 
-                # такой счёт уже есть в базе, но его статус изменился
+                // такой счёт уже есть в базе, но его статус изменился
                 if (
                     isset($cache['outvoices'][$purse['pursename']][$element['id']])
                     &&
                     $cache['outvoices'][$purse['pursename']][$element['id']]['state'] != $element['state']
                 ) {
-                    # обновляем сам счёт
+                    // обновляем сам счёт
                     $prepare = $this->pdo->prepare("
                         UPDATE `outvoices` SET
                             `dateupd` = :dateupd,
@@ -385,7 +396,7 @@ class commands
                     continue;
                 }
 
-                # получается, что это новый счёт - заносим его
+                // получается, что это новый счёт - заносим его
                 $insert = $this->pdo->prepare("
                     INSERT INTO `outvoices` (
                         `id`,
@@ -398,7 +409,7 @@ class commands
                         `dateupd`,
                         `state`,
                         `address`,
-                        `desc`,
+                        `description`,
                         `period`,
                         `expiration`,
                         `wmtranid`
@@ -438,20 +449,26 @@ class commands
                 $insert->execute($bind);
             }
 
-            # если не нашли за чем следить, то дело за последней итерацией
-            $savedate = empty($savedate) ? $lastdate : $savedate;
+            // если не нашли за чем следить, то дело за последней итерацией
+            if (empty($savetime) && !empty($lasttime)) {
+                $savetime = $lasttime;
+            }
+            // вообще не было итераций
+            else if (empty($savetime) && empty($lasttime)) {
+                $savetime = (new DateTime)->getTimestamp();
+            }
 
-            # сохраняем временную отметку, если она изменилась
-            if ($savedate != $dates[$purse['pursename']][4]) {
+            // сохраняем временную отметку, если она изменилась
+            if ($savetime != $times[$purse['pursename']][4]) {
                 $prepare = $this->pdo->prepare("
                     UPDATE `purses_times` SET
-                        `date` = :date
+                        `time` = :time
                     WHERE
                         `pursename` = :pursename
                             AND
                         `xml_id` = 4
                 ");
-                $prepare->bindValue(":date", $savedate);
+                $prepare->bindValue(":time", $savetime);
                 $prepare->bindValue(":pursename", $purse['pursename']);
                 $prepare->execute();
             }
@@ -460,33 +477,32 @@ class commands
         /*
             синхронизируем счета, которые выписали нам
         */
-        # временная отметка, которую нужно сохранить
-        $savedate = null;
-        $lastdate = date("Ymd H:i:s"); # а вдруг не будет итераций?
+        // временная отметка, которую нужно сохранить
+        $savetime = null;
+        // временная отметка последнего элемента
+        $lasttime = null;
 
-        # вытаскиваем список счетов, которые нам выписали
-        $list = $this->wmxml->xml10(null, 0, $this->system['xml10time']);
+        // вытаскиваем список счетов, которые выписали нам
+        $time = ($this->system['xml10time']) ? new DateTime('@'.$this->system['xml10time']) : null;
+        $list = $this->wmxml->xml10(null, 0, $time);
 
         foreach ($list as $element) {
-            # нам необходимо найти дату, от которой мы будем следить
-            # счёт должен быть неоплаченным
-            # отслеживаемой даты ещё не должно быть
-            # счёт не должен быть просроченным по времени
+            // в полученных счетах: следим за неоплаченными счетами, которые не истекли по времени
             if (
-                $element['state'] == wmxml::STATE_NOPAY
+                $element['state'] == \pulyavin\wmxml::STATE_NOPAY
                 &&
-                (strtotime($element['datecrt']) + $element['expiration'] * 24 * 60 * 60) > time()
+                ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > (new DateTime)->getTimestamp()
                 &&
-                empty($savedate)
+                empty($savetime)
             ) {
-                # если это прям сразу первая итерация, то её и берём
-                $savedate = empty($lastdate) ? $element['datecrt'] : $lastdate;
+                // если это не первая итерация, то берём временной отсчёт с прошлого элемента
+                $savetime = empty($lasttime) ? $element['datecrt']->getTimestamp() : $lasttime;
             }
 
-            # время последней транзакции
-            $lastdate = $element['datecrt'];
+            // время последнего элемента
+            $lasttime = $element['datecrt']->getTimestamp();
 
-            # такой счёт уже есть в базе и его статус не изменился
+            // такой счёт уже есть в базе и его статус не изменился
             if (
                 isset($cache['invoices'][$element['id']])
                 &&
@@ -495,13 +511,13 @@ class commands
                 continue;
             }
 
-            # такой счёт уже есть в базе, но его статус изменился
+            // такой счёт уже есть в базе, но его статус изменился
             if (
                 isset($cache['invoices'][$element['id']])
                 &&
                 $cache['invoices'][$element['id']]['state'] != $element['state']
             ) {
-                # обновляем сам счёт
+                // обновляем сам счёт
                 $prepare = $this->pdo->prepare("
                     UPDATE `invoices` SET
                         `dateupd` = :dateupd,
@@ -516,10 +532,10 @@ class commands
                 $prepare->bindValue(":wmtranid", $element['wmtranid']);
                 $prepare->execute();
 
-                # скрываем событие
+                // скрываем событие
                 $prepare = $this->pdo->prepare("
                     UPDATE `events` SET
-                        `is_hide` = 1
+                        `is_hidden` = 1
                     WHERE
                         `id` = :id
                 ");
@@ -529,7 +545,7 @@ class commands
                 continue;
             }
 
-            # получается, что это новый счёт - заносим его
+            // получается, что это новый счёт - заносим его
             $prepare = $this->pdo->prepare("
                 INSERT INTO `invoices` (
                     `id`,
@@ -541,7 +557,7 @@ class commands
                     `dateupd`,
                     `state`,
                     `address`,
-                    `desc`,
+                    `description`,
                     `period`,
                     `expiration`,
                     `wmtranid`
@@ -578,9 +594,9 @@ class commands
             ];
             $prepare->execute($bind);
 
-            # и создаём событие, если счёт не оплаченный и время его действия не истекло
+            // и создаём событие, если счёт не оплаченный и время его действия не истекло
             if (
-                $element['state'] == wmxml::STATE_NOPAY
+                $element['state'] == \pulyavin\wmxml::STATE_NOPAY
                 &&
                 ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > time()
             ) {
@@ -588,21 +604,27 @@ class commands
             }
         }
 
-        # если не нашли за чем следить, то дело за последней итерацией
-        $savedate = empty($savedate) ? $lastdate : $savedate;
+        // если не нашли за чем следить, то дело за последней итерацией
+        if (empty($savetime) && !empty($lasttime)) {
+            $savetime = $lasttime;
+        }
+        // вообще не было итераций
+        else if (empty($savetime) && empty($lasttime)) {
+            $savetime = (new DateTime)->getTimestamp();
+        }
 
-        # сохраняем временную отметку, если она изменилась
-        if ($savedate != $this->system['xml10time']) {
+        // сохраняем временную отметку, если она изменилась
+        if ($savetime != $this->system['xml10time']) {
             $prepare = $this->pdo->prepare("
                 UPDATE `system` SET
-                    `value` = :savedate
+                    `value` = :time
                 WHERE
                     `name` = 'xml10time'
             ");
-            $prepare->bindValue(":savedate", $savedate);
+            $prepare->bindValue(":time", $savetime);
             $prepare->execute();
 
-            $this->system['xml10time'] = $savedate;
+            $this->system['xml10time'] = $savetime;
         }
     }
 
@@ -638,7 +660,7 @@ class commands
         $insert->execute();
 
         $insert->bindValue(":name", "xml10time");
-        $insert->bindValue(":value", "");
+        $insert->bindValue(":value", "0");
         $insert->execute();
 
         # собираем информацию о состоянии кошельков
@@ -649,7 +671,7 @@ class commands
                 INSERT INTO `purses` (
                     `pursename`,
                     `amount`,
-                    `desc`,
+                    `description`,
                     `amount_last`
                 )
                 VALUES (
@@ -801,7 +823,7 @@ class commands
                     $at_purse,
                     $invoice['storepurse'],
                     $invoice['amount'],
-                    $invoice['desc'],
+                    $invoice['description'],
                     0,
                     "",
                     $invoice['id']
@@ -836,7 +858,7 @@ class commands
         $is_error = false;
         $message = "";
 
-        if ($transac['opertype'] != wmxml::OPERTYPE_PROTECTION) {
+        if ($transac['opertype'] != \pulyavin\wmxml::OPERTYPE_PROTECTION) {
             $is_error = true;
             $message = "Транзация не по протекции";
         } else if (empty($transac)) {
@@ -948,10 +970,10 @@ class commands
 
     /**
      * invoiceCommand(): выписывание счёта
-     * @param  [type] $wmid   WMID платильщика
-     * @param  [type] $purse  на наш кошелёк
-     * @param  [type] $amount сумма счёта
-     * @param  [type] $desc   описание счёта
+     * @param $wmid
+     * @param $purse
+     * @param $amount
+     * @param $desc
      * @return array
      */
     public function invoiceCommand($wmid, $purse, $amount, $desc)
@@ -1009,13 +1031,13 @@ class commands
         # подчищаем просроченные события
         $sql = $this->pdo->prepare("
             UPDATE `events` SET
-                `is_hide` = 1
+                `is_hidden` = 1
             WHERE
                 `expiration` <= :time
                 AND
                 `expiration` != ''
                 AND
-                `is_hide` = 0
+                `is_hidden` = 0
         ");
         $sql->bindValue(":time", time());
         $sql->execute();
@@ -1025,7 +1047,7 @@ class commands
             $sql = "
                 SELECT * FROM `events`
                 WHERE
-                    `is_hide` = '0'
+                    `is_hidden` = '0'
                 ORDER BY `time` DESC
             ";
         } else {
@@ -1045,7 +1067,7 @@ class commands
         if (!$nohide) {
             $prepare = $this->pdo->prepare("
                 UPDATE `events` SET
-                    `is_hide` = 1
+                    `is_hidden` = 1
                 WHERE
                     `type` = :transfer
             ");
@@ -1177,25 +1199,25 @@ class commands
      * @param integer $period срок действия счёта или истечения протекции в днях
      * @param string $desc описание события
      * @param integer $type тип события
-     * @param double $amout сумма
+     * @param double $amount сумма
      * @param string $purse кошелёк
      */
-    private function addEvent($id, $time, $period, $desc, $type, $amout, $purse)
+    private function addEvent($id, $time, $period, $desc, $type, $amount, $purse)
     {
         # вычисляем дату истечение события
         $expiration = $period ? $time + $period * 24 * 60 * 60 : null;
 
         switch ($type) {
             case self::EVENT_TRANSFER:
-                $desc = 'перевод на сумму ' . $amout . ' ' . self::typePurse($purse) . ' [' . $desc . ']';
+                $desc = 'перевод на сумму ' . $amount . ' ' . self::typePurse($purse) . ' [' . $desc . ']';
                 break;
 
             case self::EVENT_PROTECTION:
-                $desc = 'перевод на сумму ' . $amout . ' ' . self::typePurse($purse) . ' [' . $desc . ']';
+                $desc = 'перевод на сумму ' . $amount . ' ' . self::typePurse($purse) . ' [' . $desc . ']';
                 break;
 
             case self::EVENT_INVOICE:
-                $desc = 'счёт к оплате на сумму ' . $amout . ' ' . self::typePurse($purse) . ' [' . $desc . ']';
+                $desc = 'счёт к оплате на сумму ' . $amount . ' ' . self::typePurse($purse) . ' [' . $desc . ']';
                 break;
         }
 
@@ -1203,9 +1225,9 @@ class commands
             INSERT INTO `events` (
                 `id`,
                 `time`,
-                `is_hide`,
+                `is_hidden`,
                 `expiration`,
-                `desc`,
+                `description`,
                 `type`
             ) VALUES (
                 :id,
