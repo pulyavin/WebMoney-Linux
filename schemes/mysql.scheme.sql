@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS `events` (
 
 CREATE TABLE IF NOT EXISTS `invoices` (
   `id` int(10) unsigned NOT NULL,
-  `orderid` int(11) NOT NULL,
+  `orderid` int(10) unsigned DEFAULT NULL,
   `storewmid` varchar(12) CHARACTER SET utf8 NOT NULL,
   `storepurse` varchar(13) CHARACTER SET utf8 NOT NULL,
   `amount` decimal(8,2) NOT NULL,
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS `invoices` (
 
 CREATE TABLE IF NOT EXISTS `outvoices` (
   `id` int(10) unsigned NOT NULL,
-  `orderid` int(10) unsigned NOT NULL,
+  `orderid` int(10) unsigned DEFAULT NULL,
   `storepurse` varchar(13) NOT NULL,
   `customerwmid` varchar(12) NOT NULL,
   `customerpurse` varchar(13) NOT NULL,
@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS `purses` (
 
 CREATE TABLE IF NOT EXISTS `purses_times` (
   `pursename` varchar(13) NOT NULL,
-  `time` int(10) unsigned NOT NULL,
+  `time` int(10) unsigned NOT NULL DEFAULT '0',
   `xml_id` tinyint(3) unsigned NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS `transactions` (
   `comiss` decimal(6,2) unsigned NOT NULL,
   `opertype` tinyint(3) unsigned NOT NULL,
   `wminvid` int(10) unsigned DEFAULT NULL,
-  `orderid` int(11) NOT NULL,
+  `orderid` int(10) unsigned DEFAULT NULL,
   `tranid` int(10) unsigned DEFAULT NULL,
   `period` tinyint(3) unsigned DEFAULT NULL,
   `description` text DEFAULT NULL,
