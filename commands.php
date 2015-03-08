@@ -2,6 +2,7 @@
 
 class commands
 {
+    // Dependency Injection
     private $wmxml;
     private $pdo;
     // массив кошельков по идентификаторам

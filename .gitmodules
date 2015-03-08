@@ -4,3 +4,6 @@
 [submodule "vendors/wmxml"]
 	path = vendors/wmxml
 	url = https://github.com/pulyavin/WebMoney-XML-API-PHP.git
+[submodule "vendors/php-wmsigner"]
+	path = vendors/php-wmsigner
+	url = git@github.com:pulyavin/php-wmsigner.git

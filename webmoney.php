@@ -12,15 +12,32 @@ require_once($config['vendors']['wmxml']);
 // подгружаем библиотеку console
 require_once($config['vendors']['console']);
 
+// подгружаем библиотеку php-wmsigner
+require_once($config['vendors']['signer']);
+
 use \pulyavin\wmxml as wmxml;
+use \baibaratsky\WebMoney\Signer as Signer;
 
 try {
+	// будем работать с классом Signer на PHP
+	if (
+		isset($config['main']['key_file'])
+		&&
+		isset($config['main']['key_password'])
+	) {
+		$wmsigner = new Signer($config['main']['wmid'], $config['main']['key_file'], $config['main']['key_password']);
+	}
+	// бинарный подписчик
+	else {
+		$wmsigner = $config['paths']['wmsigner'];
+	}
+
 	// создаём объект WebMoney XML API
 	$wmxml = new wmxml(
 		"classic",
 		[
 			"wmid"     => $config['main']['wmid'],
-			"wmsigner" => $config['paths']['wmsigner'],
+			"wmsigner" => $wmsigner,
 			"rootca"   => $config['paths']['rootca'],
 			"transid"  => $config['paths']['transid'],
 			"connect"  => $config['curl']['connect'],
