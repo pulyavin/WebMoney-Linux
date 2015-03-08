@@ -456,7 +456,7 @@ class shell {
 				->text("\t")
 				->text("Описание: ")
 				->style(null, 'bold')
-				->text($command['data']['description'])
+				->text($command['data']['desc'])
 				->style()
 				->stdout(null, true);
 		}

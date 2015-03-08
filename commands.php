@@ -56,6 +56,54 @@ class commands
         // вытаскиваем последний TL
         $row = $this->pdo->query("SELECT `rank` FROM `tl` ORDER BY `time` DESC LIMIT 0, 1")->fetch(PDO::FETCH_ASSOC);
         $this->userinfo['tl'] = $row['rank'];
+
+        // получаем BL:бизнес уровень
+        try {
+            $bl = $this->wmxml->getBl();
+            if ($this->userinfo['bl'] != $bl) {
+                $this->userinfo['bl'] = $bl;
+                $sql = $this->pdo->prepare("
+                INSERT INTO `bl` (
+                    `time`,
+                    `rank`
+                )
+                VALUES (
+                    :time,
+                    :rank
+                )
+            ");
+                $sql->bindValue(":time", time());
+                $sql->bindValue(":rank", $bl);
+                $sql->execute();
+            }
+        }
+        catch (Exception $e) {
+            $this->userinfo['bl'] = "-//-";
+        }
+
+        // получаем TL:уровень доверия
+        try {
+            $tl = $this->wmxml->getTl();
+            if ($this->userinfo['tl'] != $tl) {
+                $this->userinfo['tl'] = $tl;
+                $sql = $this->pdo->prepare("
+                    INSERT INTO `tl` (
+                        `time`,
+                        `rank`
+                    )
+                    VALUES (
+                        :time,
+                        :rank
+                    )
+                ");
+                $sql->bindValue(":time", time());
+                $sql->bindValue(":rank", $tl);
+                $sql->execute();
+            }
+        }
+        catch (Exception $e) {
+            $this->userinfo['tl'] = "-//-";
+        }
     }
 
     /**
@@ -101,44 +149,6 @@ class commands
             $sql->bindValue(":desc", $purse['desc']);
             $sql->bindValue(":amount", $purse['amount']);
             $sql->bindValue(":pursename", $purse['pursename']);
-            $sql->execute();
-        }
-
-        // получаем BL:бизнес уровень
-        $bl = $this->wmxml->getBl();
-        if ($this->userinfo['bl'] != $bl) {
-            $this->userinfo['bl'] = $bl;
-            $sql = $this->pdo->prepare("
-                INSERT INTO `bl` (
-                    `time`,
-                    `rank`
-                )
-                VALUES (
-                    :time,
-                    :rank
-                )
-            ");
-            $sql->bindValue(":time", time());
-            $sql->bindValue(":rank", $bl);
-            $sql->execute();
-        }
-
-        // получаем TL:уровень доверия
-        $tl = $this->wmxml->getTl();
-        if ($this->userinfo['tl'] != $tl) {
-            $this->userinfo['tl'] = $tl;
-            $sql = $this->pdo->prepare("
-                INSERT INTO `tl` (
-                    `time`,
-                    `rank`
-                )
-                VALUES (
-                    :time,
-                    :rank
-                )
-            ");
-            $sql->bindValue(":time", time());
-            $sql->bindValue(":rank", $tl);
             $sql->execute();
         }
 

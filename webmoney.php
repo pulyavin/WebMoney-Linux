@@ -39,7 +39,7 @@ try {
 			"wmid"     => $config['main']['wmid'],
 			"wmsigner" => $wmsigner,
 			"rootca"   => $config['paths']['rootca'],
-			"transid"  => $config['paths']['transid'],
+			"tranid"  => $config['paths']['tranid'],
 			"connect"  => $config['curl']['connect'],
 			"timeout"  => $config['curl']['timeout']
 		]
