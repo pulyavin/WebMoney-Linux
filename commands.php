@@ -202,7 +202,6 @@ class commands
             $time = ($times[$purse['pursename']][3]) ? new DateTime('@'.$times[$purse['pursename']][3]) : null;
             try {
                 $wmxml = $this->wmxml->xml3($purse['pursename'], $time);
-                echo ' '.$time->format("Ymd H:i:s").' ';
                 if ($wmxml['is_error']) {
                     throw new Exception($wmxml['error_message'], $wmxml['error_code']);
                 }
