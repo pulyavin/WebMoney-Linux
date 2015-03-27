@@ -1,4 +1,5 @@
 <?php
+use \pulyavin\WebMoney\WMXml;
 
 class commands
 {
@@ -23,10 +24,10 @@ class commands
 
     /**
      * Инициализация библиотеки
-     * @param \pulyavin\wmxml|wmxml $wmxml $wmxml инстанс объекта wmxml
+     * @param WMXml $wmxml $wmxml инстанс объекта wmxml
      * @param PDO $pdo инстанс объекта PDO
      */
-    public function __construct(pulyavin\wmxml $wmxml, PDO $pdo)
+    public function __construct(WMXml $wmxml, PDO $pdo)
     {
         $this->wmxml = $wmxml;
         $this->pdo = $pdo;
@@ -60,8 +61,8 @@ class commands
         // получаем BL:бизнес уровень
         try {
             $bl = $this->wmxml->getBl();
-            if ($this->userinfo['bl'] != $bl) {
-                $this->userinfo['bl'] = $bl;
+            if ($bl['is_error'] == 0 && $this->userinfo['bl'] != $bl['data']['value']) {
+                $this->userinfo['bl'] = $bl['data']['value'];
                 $sql = $this->pdo->prepare("
                 INSERT INTO `bl` (
                     `time`,
@@ -73,7 +74,7 @@ class commands
                 )
             ");
                 $sql->bindValue(":time", time());
-                $sql->bindValue(":rank", $bl);
+                $sql->bindValue(":rank", $bl['data']['value']);
                 $sql->execute();
             }
         }
@@ -84,8 +85,8 @@ class commands
         // получаем TL:уровень доверия
         try {
             $tl = $this->wmxml->getTl();
-            if ($this->userinfo['tl'] != $tl) {
-                $this->userinfo['tl'] = $tl;
+            if ($tl['is_error'] == 0 && $this->userinfo['tl'] != $tl['data']['value']) {
+                $this->userinfo['tl'] = $tl['data']['value'];
                 $sql = $this->pdo->prepare("
                     INSERT INTO `tl` (
                         `time`,
@@ -97,7 +98,7 @@ class commands
                     )
                 ");
                 $sql->bindValue(":time", time());
-                $sql->bindValue(":rank", $tl);
+                $sql->bindValue(":rank", $tl['data']['value']);
                 $sql->execute();
             }
         }
@@ -135,7 +136,16 @@ class commands
         }
 
         // обновляем информацию о состоянии кошельков
-        $purses = $this->wmxml->xml9();
+        try {
+            $wmxml = $this->wmxml->xml9();
+            if ($wmxml['is_error']) {
+                throw new Exception("WMXml error: " . $wmxml['error_message'], $wmxml['error_code']);
+            }
+            $purses = $wmxml['data'];
+        }
+        catch (Exception $e) {
+            throw new Exception("WMXml exception: " . $e->getMessage());
+        }
 
         foreach ($purses as $purse) {
             $sql = $this->pdo->prepare("
@@ -190,12 +200,21 @@ class commands
 
             // запрашиваем новые транзакции
             $time = ($times[$purse['pursename']][3]) ? new DateTime('@'.$times[$purse['pursename']][3]) : null;
-            $list = $this->wmxml->xml3($purse['pursename'], $time);
+            try {
+                $wmxml = $this->wmxml->xml3($purse['pursename'], $time);
+                if ($wmxml['is_error']) {
+                    throw new Exception("WMXml error: " . $wmxml['error_message'], $wmxml['error_code']);
+                }
+                $list = $wmxml['data'];
+            }
+            catch (Exception $e) {
+                throw new Exception("WMXml exception: " . $e->getMessage());
+            }
 
             foreach ($list as $element) {
                 // в транзакциях: следим за измением операций по протекции
                 if (
-                    $element['opertype'] == \pulyavin\wmxml::OPERTYPE_PROTECTION
+                    $element['opertype'] == WMXml::OPERTYPE_PROTECTION
                     &&
                     empty($savetime)
                 ) {
@@ -316,8 +335,8 @@ class commands
                 $insert->execute($bind);
 
                 // если это приходная операция - создаём событие
-                if ($element['type'] == \pulyavin\wmxml::TRANSAC_IN) {
-                    $type = ($element['opertype'] == \pulyavin\wmxml::OPERTYPE_PROTECTION) ? self::EVENT_PROTECTION : self::EVENT_TRANSFER;
+                if ($element['type'] == WMXml::TRANSAC_IN) {
+                    $type = ($element['opertype'] == WMXml::OPERTYPE_PROTECTION) ? self::EVENT_PROTECTION : self::EVENT_TRANSFER;
                     $this->addEvent($element['id'], $element['datecrt']->getTimestamp(), $element['period'], $element['desc'], $type, $element['amount'], $element['pursesrc']);
                 }
             }
@@ -356,12 +375,21 @@ class commands
 
             // запрашиваем новые счета
             $time = ($times[$purse['pursename']][4]) ? new DateTime('@'.$times[$purse['pursename']][4]) : null;
-            $list = $this->wmxml->xml4($purse['pursename'], $time);
+            try {
+                $wmxml = $this->wmxml->xml4($purse['pursename'], $time);
+                if ($wmxml['is_error']) {
+                    throw new Exception("WMXml error: " . $wmxml['error_message'], $wmxml['error_code']);
+                }
+                $list = $wmxml['data'];
+            }
+            catch (Exception $e) {
+                throw new Exception("WMXml exception: " . $e->getMessage());
+            }
 
             foreach ($list as $element) {
                 // в выписанных счетах: следим за неоплаченными счетами
                 if (
-                    $element['state'] == \pulyavin\wmxml::STATE_NOPAY
+                    $element['state'] == WMXml::STATE_NOPAY
                     &&
                     ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > (new DateTime)->getTimestamp()
                     &&
@@ -495,12 +523,21 @@ class commands
 
         // вытаскиваем список счетов, которые выписали нам
         $time = ($this->system['xml10time']) ? new DateTime('@'.$this->system['xml10time']) : null;
-        $list = $this->wmxml->xml10(null, 0, $time);
+        try {
+            $wmxml = $this->wmxml->xml10(null, 0, $time);
+            if ($wmxml['is_error']) {
+                throw new Exception("WMXml error: " . $wmxml['error_message'], $wmxml['error_code']);
+            }
+            $list = $wmxml['data'];
+        }
+        catch (Exception $e) {
+            throw new Exception("WMXml exception: " . $e->getMessage());
+        }
 
         foreach ($list as $element) {
             // в полученных счетах: следим за неоплаченными счетами, которые не истекли по времени
             if (
-                $element['state'] == \pulyavin\wmxml::STATE_NOPAY
+                $element['state'] == WMXml::STATE_NOPAY
                 &&
                 ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > (new DateTime)->getTimestamp()
                 &&
@@ -607,7 +644,7 @@ class commands
 
             // и создаём событие, если счёт не оплаченный и время его действия не истекло
             if (
-                $element['state'] == \pulyavin\wmxml::STATE_NOPAY
+                $element['state'] == WMXml::STATE_NOPAY
                 &&
                 ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > time()
             ) {
@@ -644,7 +681,7 @@ class commands
      */
     public function initCommand()
     {
-        # подготавливаем таблицы к массовому внесению данных
+        // подготавливаем таблицы к массовому внесению данных
         $this->pdo->exec("DELETE FROM `bl`");
         $this->pdo->exec("DELETE FROM `events`");
         $this->pdo->exec("DELETE FROM `invoices`");
@@ -674,8 +711,13 @@ class commands
         $insert->bindValue(":value", "0");
         $insert->execute();
 
-        # собираем информацию о состоянии кошельков
-        $purses = $this->wmxml->xml9();
+        // собираем информацию о состоянии кошельков
+        try {
+            $purses = $this->wmxml->xml9();
+        }
+        catch (Exception $e) {
+            throw new Exception("WMXml error: " . $e->getMessage());
+        }
 
         foreach ($purses as $purse) {
             $sql = $this->pdo->prepare("
@@ -698,7 +740,7 @@ class commands
             $sql->bindValue(":amount_last", $purse['amount']);
             $sql->execute();
 
-            # создаём структуру временных слепков
+            // создаём структуру временных слепков
             $sql = $this->pdo->prepare("
                 INSERT INTO `purses_times` (
                     `pursename`,
@@ -725,7 +767,7 @@ class commands
             $sql->execute();
         }
 
-        # собираем информацию о самом пользователе
+        // собираем информацию о самом пользователе
         $passport = $this->wmxml->xml11();
         $userinfo = [
             'nickname'    => $passport['userinfo']['nickname'],
@@ -756,7 +798,7 @@ class commands
         ];
 
         foreach ($userinfo as $name => $value) {
-            # сохраняем для себя
+            // сохраняем для себя
             $this->userinfo[$name] = $value;
 
             $sql = $this->pdo->prepare("
@@ -774,7 +816,7 @@ class commands
             $sql->execute();
         }
 
-        # говорим, что успешно произвели иницилизацию
+        // говорим, что успешно произвели иницилизацию
         $this->system['is_syncpurses'] = "1";
         $this->pdo->exec("
             UPDATE `system` SET
@@ -786,21 +828,23 @@ class commands
 
     /**
      * Оплата счёта
+     *
      * @param  integer $wminvid номер счета (в системе WebMoney), по которому выполняется перевод
      * @param  string $at_purse номер кошелька с которого выполняется оплата счёта
      * @return array
+     * @throws Exception
      */
     public function payCommand($wminvid, $at_purse)
     {
-        # откапываем сокращения кошельков
+        // откапываем сокращения кошельков
         $at_purse = $this->shortPurse($at_purse);
 
-        # по wminvid вытаскиваем счёт
+        // по wminvid вытаскиваем счёт
         $invoice = $this->pdo->query("SELECT * FROM `invoices` WHERE `id` = '" . $wminvid . "'")->fetch(PDO::FETCH_ASSOC);
 
-        # не указан кошелёк - ищем подходящий
+        // не указан кошелёк - ищем подходящий
         if (empty($at_purse)) {
-            # пробегаемся по кошелькам: ищем кошелёк такого же типа и с нужной суммой
+            // пробегаемся по кошелькам: ищем кошелёк такого же типа и с нужной суммой
             foreach ($this->purses as $purses) {
                 if (
                     $invoice['storepurse'] != $purses['pursename']
@@ -815,7 +859,7 @@ class commands
             }
         }
 
-        # проверяем на ошибки
+        // проверяем на ошибки
         $data = null;
         $is_error = false;
         $message = "";
@@ -830,7 +874,7 @@ class commands
 
         if (!$is_error) {
             try {
-                $data = $this->wmxml->xml2(
+                $wmxml = $this->wmxml->xml2(
                     $at_purse,
                     $invoice['storepurse'],
                     $invoice['amount'],
@@ -839,9 +883,17 @@ class commands
                     "",
                     $invoice['id']
                 );
-            } catch (Exception $e) {
-                $is_error = true;
-                $message = $this->wmxml->error;
+
+                if ($wmxml['is_error']) {
+                    $is_error = true;
+                    $message = $wmxml['error_message'];
+                }
+                else {
+                    $data = $wmxml['data'];
+                }
+            }
+            catch (Exception $e) {
+                throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
 
@@ -857,19 +909,19 @@ class commands
      * @param integer $wmtranid уникальный номер платежа в системе учета WebMoney
      * @param $pcode код протекции сделки
      * @return array
-     * @internal param string $code код протекции сделки
+     * @throws Exception
      */
     public function protectCommand($wmtranid, $pcode)
     {
-        # по wmtranid вытаскиваем транзакцию
+        // по wmtranid вытаскиваем транзакцию
         $transac = $this->pdo->query("SELECT * FROM `transactions` WHERE `id` = '" . $wmtranid . "'")->fetch(PDO::FETCH_ASSOC);
 
-        # проверяем на ошибки
+        // проверяем на ошибки
         $data = null;
         $is_error = false;
         $message = "";
 
-        if ($transac['opertype'] != \pulyavin\wmxml::OPERTYPE_PROTECTION) {
+        if ($transac['opertype'] != WMXml::OPERTYPE_PROTECTION) {
             $is_error = true;
             $message = "Транзация не по протекции";
         } else if (empty($transac)) {
@@ -879,13 +931,21 @@ class commands
 
         if (!$is_error) {
             try {
-                $data = $this->wmxml->xml5(
+                $wmxml = $this->wmxml->xml5(
                     $wmtranid,
                     $pcode
                 );
-            } catch (Exception $e) {
-                $is_error = true;
-                $message = $this->wmxml->error;
+
+                if ($wmxml['is_error']) {
+                    $is_error = true;
+                    $message = $wmxml['error_message'];
+                }
+                else {
+                    $data = $wmxml['data'];
+                }
+            }
+            catch (Exception $e) {
+                throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
 
@@ -908,21 +968,21 @@ class commands
      */
     public function sendCommand($at_purse, $to_purse, $amount, $desc, $protect_period = null, $protect_code = null)
     {
-        # откапываем сокращения кошельков
+        // откапываем сокращения кошельков
         $at_purse = $this->shortPurse($at_purse);
         $to_purse = $this->shortPurse($to_purse);
 
-        # если не указана сумма и кошелёк получателя тоже наш, то переводим всю сумма, которая есть на кошельке
-        if (empty($amount) && $this->wallets[$to_purse]) {
+        // если не указана сумма и кошелёк получателя тоже наш, то переводим всю сумма, которая есть на кошельке
+        if (empty($amount) && !empty($to_purse) && $this->wallets[$to_purse]) {
             $amount = $this->wallets[$at_purse]['amount'];
         }
 
-        # не описания? генерируем!
+        // нет описания? генерируем!
         if (empty($desc)) {
             $desc = "перевод средств с {$at_purse} на {$to_purse}";
         }
 
-        # проверяем на ошибки
+        // проверяем на ошибки
         $data = null;
         $is_error = false;
         $message = "";
@@ -958,7 +1018,7 @@ class commands
 
         if (!$is_error) {
             try {
-                $data = $this->wmxml->xml2(
+                $wmxml = $this->wmxml->xml2(
                     $at_purse,
                     $to_purse,
                     $amount,
@@ -966,9 +1026,17 @@ class commands
                     $protect_period,
                     $protect_code
                 );
-            } catch (Exception $e) {
-                $is_error = true;
-                $message = $e->getMessage();
+
+                if ($wmxml['is_error']) {
+                    $is_error = true;
+                    $message = $wmxml['error_message'];
+                }
+                else {
+                    $data = $wmxml['data'];
+                }
+            }
+            catch (Exception $e) {
+                throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
 
@@ -986,13 +1054,14 @@ class commands
      * @param $amount
      * @param $desc
      * @return array
+     * @throws Exception
      */
     public function invoiceCommand($wmid, $purse, $amount, $desc)
     {
-        # откапываем сокращения кошельков
+        // откапываем сокращения кошельков
         $purse = $this->shortPurse($purse);
 
-        # проверяем на ошибки
+        // проверяем на ошибки
         $data = null;
         $is_error = false;
         $message = "";
@@ -1012,15 +1081,23 @@ class commands
 
         if (!$is_error) {
             try {
-                $data = $this->wmxml->xml1(
+                $wmxml = $this->wmxml->xml1(
                     $wmid,
                     $purse,
                     $amount,
                     $desc
                 );
-            } catch (Exception $e) {
-                $is_error = true;
-                $message = $e->getMessage();
+
+                if ($wmxml['is_error']) {
+                    $is_error = true;
+                    $message = $wmxml['error_message'];
+                }
+                else {
+                    $data = $wmxml['data'];
+                }
+            }
+            catch (Exception $e) {
+                throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
 
@@ -1039,7 +1116,7 @@ class commands
      */
     public function eventsCommand($nums = null, $nohide = false)
     {
-        # подчищаем просроченные события
+        // подчищаем просроченные события
         $sql = $this->pdo->prepare("
             UPDATE `events` SET
                 `is_hidden` = 1
@@ -1074,7 +1151,7 @@ class commands
             $events[] = $row;
         }
 
-        # скрываем обычные переводы, нас не просили их сохранить
+        // скрываем обычные переводы, нас не просили их сохранить
         if (!$nohide) {
             $prepare = $this->pdo->prepare("
                 UPDATE `events` SET
@@ -1097,12 +1174,12 @@ class commands
      */
     public function passportCommand($search)
     {
-        # проверяем на ошибки
+        // проверяем на ошибки
         $data = null;
         $is_error = false;
         $message = "";
 
-        # у нас кошелёк, получаем WMID
+        // у нас кошелёк, получаем WMID
         if (strlen($search) == 13) {
             $data = $this->wmxml->xml8(null, $search);
 
@@ -1116,16 +1193,26 @@ class commands
 
         if (!$is_error) {
             try {
-                # получаем паспортные данные
-                $data = $this->wmxml->xml11($search);
-                # собираем BL и TL Для каждого WMID, прикреплённого к аттестату
-                foreach ($data['wmids'] as $wmid => $array) {
-                    $data['wmids'][$wmid]['bl'] = $this->wmxml->getBl($wmid);
-                    $data['wmids'][$wmid]['tl'] = $this->wmxml->getTl($wmid);
+                $wmxml = $this->wmxml->xml11($search);
+
+                if ($wmxml['is_error']) {
+                    $is_error = true;
+                    $message = $wmxml['error_message'];
                 }
-            } catch (Exception $e) {
-                $is_error = true;
-                $message = $e->getMessage();
+                else {
+                    $data = $wmxml['data'];
+                    // собираем BL и TL для каждого WMID, прикреплённого к аттестату
+                    foreach ($data['wmids'] as $wmid => $array) {
+                        try {
+                            $data['wmids'][$wmid]['bl'] = $this->wmxml->getBl($wmid);
+                            $data['wmids'][$wmid]['tl'] = $this->wmxml->getTl($wmid);
+                        }
+                        catch(Exception $e) {}
+                    }
+                }
+            }
+            catch (Exception $e) {
+                throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
 
@@ -1169,13 +1256,13 @@ class commands
         storewmid
         */
 
-        # поиск по транзакциям
+        // поиск по транзакциям
         if ($type == self::SEARCH_TRANSACTIONS) {
 
-        } # поиск по входящим счетам
+        } // поиск по входящим счетам
         else if ($type == self::SEARCH_INVOICES) {
 
-        } # поиск по исходящим счетам
+        } // поиск по исходящим счетам
         else if ($type == self::SEARCH_OUTVOICES) {
 
         }
@@ -1215,7 +1302,7 @@ class commands
      */
     private function addEvent($id, $time, $period, $desc, $type, $amount, $purse)
     {
-        # вычисляем дату истечение события
+        // вычисляем дату истечение события
         $expiration = $period ? $time + $period * 24 * 60 * 60 : null;
 
         switch ($type) {
@@ -1302,12 +1389,12 @@ class commands
 
         $letter = strtoupper(substr($purse, 0, 1));
 
-        # возвращаем обозначение типа USD, RUR,...
+        // возвращаем обозначение типа USD, RUR,...
         if ($symbol) {
             return $types[$letter];
         }
 
-        # возвращаем обозначение типа WMZ, WMR,...
+        // возвращаем обозначение типа WMZ, WMR,...
         return "WM" . $letter;
     }
 }

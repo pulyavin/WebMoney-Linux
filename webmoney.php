@@ -15,8 +15,10 @@ require_once($config['vendors']['console']);
 // подгружаем библиотеку php-wmsigner
 require_once($config['vendors']['signer']);
 
-use \pulyavin\wmxml as wmxml;
+use \pulyavin\WebMoney\WMXml as WMXml;
 use \baibaratsky\WebMoney\Signer as Signer;
+
+require_once("./vendors/wmxml/Exception.php");
 
 try {
 	// будем работать с классом Signer на PHP
