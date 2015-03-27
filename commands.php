@@ -139,7 +139,7 @@ class commands
         try {
             $wmxml = $this->wmxml->xml9();
             if ($wmxml['is_error']) {
-                throw new Exception("WMXml error: " . $wmxml['error_message'], $wmxml['error_code']);
+                throw new Exception($wmxml['error_message'], $wmxml['error_code']);
             }
             $purses = $wmxml['data'];
         }
@@ -183,7 +183,7 @@ class commands
             $times[$row['pursename']][$row['xml_id']] = $row['time'];
         }
 
-        // для каждого кошелька нужно посмотреть новые транзакции
+        // для каждого кошелька нужно посмотреть новые транзакции и выписанные счета
         $sql = $this->pdo->query("SELECT * FROM `purses`");
         while ($purse = $sql->fetch(PDO::FETCH_ASSOC)) {
             # заносим обновлённые данные в слепок
@@ -202,8 +202,9 @@ class commands
             $time = ($times[$purse['pursename']][3]) ? new DateTime('@'.$times[$purse['pursename']][3]) : null;
             try {
                 $wmxml = $this->wmxml->xml3($purse['pursename'], $time);
+                echo ' '.$time->format("Ymd H:i:s").' ';
                 if ($wmxml['is_error']) {
-                    throw new Exception("WMXml error: " . $wmxml['error_message'], $wmxml['error_code']);
+                    throw new Exception($wmxml['error_message'], $wmxml['error_code']);
                 }
                 $list = $wmxml['data'];
             }
@@ -378,7 +379,7 @@ class commands
             try {
                 $wmxml = $this->wmxml->xml4($purse['pursename'], $time);
                 if ($wmxml['is_error']) {
-                    throw new Exception("WMXml error: " . $wmxml['error_message'], $wmxml['error_code']);
+                    throw new Exception($wmxml['error_message'], $wmxml['error_code']);
                 }
                 $list = $wmxml['data'];
             }
@@ -526,7 +527,7 @@ class commands
         try {
             $wmxml = $this->wmxml->xml10(null, 0, $time);
             if ($wmxml['is_error']) {
-                throw new Exception("WMXml error: " . $wmxml['error_message'], $wmxml['error_code']);
+                throw new Exception($wmxml['error_message'], $wmxml['error_code']);
             }
             $list = $wmxml['data'];
         }
@@ -716,7 +717,7 @@ class commands
             $purses = $this->wmxml->xml9();
         }
         catch (Exception $e) {
-            throw new Exception("WMXml error: " . $e->getMessage());
+            throw new Exception($e->getMessage());
         }
 
         foreach ($purses as $purse) {
