@@ -5,6 +5,7 @@ class commands
 {
     // Dependency Injection
     private $wmxml;
+    private $config;
     private $pdo;
     // массив кошельков по идентификаторам
     private $purses = [];
@@ -27,10 +28,11 @@ class commands
      * @param WMXml $wmxml $wmxml инстанс объекта wmxml
      * @param PDO $pdo инстанс объекта PDO
      */
-    public function __construct(WMXml $wmxml, PDO $pdo)
+    public function __construct(WMXml $wmxml, array $config)
     {
         $this->wmxml = $wmxml;
-        $this->pdo = $pdo;
+        $this->config = $config;
+        $this->pdo = $this->getPdoConnection();
 
         // вытаскиваем системные данные
         $sql = $this->pdo->query("SELECT * FROM `system`");
@@ -142,8 +144,7 @@ class commands
                 throw new Exception($wmxml['error_message'], $wmxml['error_code']);
             }
             $purses = $wmxml['data'];
-        }
-        catch (Exception $e) {
+        } catch (Exception $e) {
             throw new Exception("WMXml exception: " . $e->getMessage());
         }
 
@@ -183,6 +184,7 @@ class commands
             $times[$row['pursename']][$row['xml_id']] = $row['time'];
         }
 
+        $pids = [];
         // для каждого кошелька нужно посмотреть новые транзакции и выписанные счета
         $sql = $this->pdo->query("SELECT * FROM `purses`");
         while ($purse = $sql->fetch(PDO::FETCH_ASSOC)) {
@@ -190,327 +192,280 @@ class commands
             $this->purses[$purse['id']] = $purse;
             $this->wallets[$purse['pursename']] = $purse;
 
-            /*
-                Синхронизация транзакций
-            */
-            // временная отметка, которую нужно сохранить
-            $savetime = null;
-            // временная отметка последнего элемента
-            $lasttime = null;
+            $pid = pcntl_fork();
 
-            // запрашиваем новые транзакции
-            $time = ($times[$purse['pursename']][3]) ? new DateTime('@'.$times[$purse['pursename']][3]) : null;
-            try {
-                $wmxml = $this->wmxml->xml3($purse['pursename'], $time);
-                if ($wmxml['is_error']) {
-                    throw new Exception($wmxml['error_message'], $wmxml['error_code']);
-                }
-                $list = $wmxml['data'];
-            }
-            catch (Exception $e) {
-                throw new Exception("WMXml exception: " . $e->getMessage());
+            if ($pid) {
+                $pids[] = $pid;
             }
 
-            foreach ($list as $element) {
-                // в транзакциях: следим за измением операций по протекции
-                if (
-                    $element['opertype'] == WMXml::OPERTYPE_PROTECTION
-                    &&
-                    empty($savetime)
-                ) {
-                    // если это не первая итерация, то берём временной отсчёт с прошлого элемента
-                    $savetime = empty($lasttime) ? $element['datecrt']->getTimestamp() : $lasttime;
+            if (empty($pid)) {
+                $pdo = $this->getPdoConnection();
+                $wmxml = clone $this->wmxml;
+
+                /*
+                    Синхронизация транзакций
+                */
+                // временная отметка, которую нужно сохранить
+                $savetime = null;
+                // временная отметка последнего элемента
+                $lasttime = null;
+
+                // запрашиваем новые транзакции
+                $time = ($times[$purse['pursename']][3]) ? new DateTime('@' . $times[$purse['pursename']][3]) : null;
+                try {
+                    $result = $wmxml->xml3($purse['pursename'], $time);
+                    if ($result['is_error']) {
+                        throw new Exception($result['error_message'], $result['error_code']);
+                    }
+                    $list = $result['data'];
+                } catch (Exception $e) {
+                    throw new Exception("WMXml exception: " . $e->getMessage());
                 }
 
-                // время последнего элемента
-                $lasttime = $element['datecrt']->getTimestamp();
+                foreach ($list as $element) {
+                    // в транзакциях: следим за измением операций по протекции
+                    if (
+                        $element['opertype'] == WMXml::OPERTYPE_PROTECTION
+                        &&
+                        empty($savetime)
+                    ) {
+                        // если это не первая итерация, то берём временной отсчёт с прошлого элемента
+                        $savetime = empty($lasttime) ? $element['datecrt']->getTimestamp() : $lasttime;
+                    }
 
-                // такая транзакция уже есть в базе и её статус не изменился
-                if (
-                    isset($cache['transactions'][$purse['pursename']][$element['id']])
-                    &&
-                    $cache['transactions'][$purse['pursename']][$element['id']]['opertype'] == $element['opertype']
-                ) {
-                    continue;
-                }
+                    // время последнего элемента
+                    $lasttime = $element['datecrt']->getTimestamp();
 
-                // такая транзакция уже есть в базе, но её статус изменился
-                if (
-                    isset($cache['transactions'][$purse['pursename']][$element['id']])
-                    &&
-                    $cache['transactions'][$purse['pursename']][$element['id']]['opertype'] != $element['opertype']
-                ) {
-                    // скрываем событие
-                    $prepare = $this->pdo->prepare("
-                        UPDATE `events` SET
-                            `is_hidden` = '1'
-                        WHERE
-                            `id` = :id
+                    // такая транзакция уже есть в базе и её статус не изменился
+                    if (
+                        isset($cache['transactions'][$purse['pursename']][$element['id']])
+                        &&
+                        $cache['transactions'][$purse['pursename']][$element['id']]['opertype'] == $element['opertype']
+                    ) {
+                        continue;
+                    }
+
+                    // такая транзакция уже есть в базе, но её статус изменился
+                    if (
+                        isset($cache['transactions'][$purse['pursename']][$element['id']])
+                        &&
+                        $cache['transactions'][$purse['pursename']][$element['id']]['opertype'] != $element['opertype']
+                    ) {
+                        // скрываем событие
+                        $prepare = $pdo->prepare("
+                            UPDATE `events` SET
+                                `is_hidden` = '1'
+                            WHERE
+                                `id` = :id
+                        ");
+                        $bind = [
+                            "id" => $element['id'],
+                        ];
+                        $prepare->execute($bind);
+
+                        // обновляем саму транзакцию
+                        $prepare = $pdo->prepare("
+                            UPDATE `transactions` SET
+                                `dateupd` = :dateupd,
+                                `opertype` = :opertype
+                            WHERE
+                                `id` = :id
+                        ");
+                        $bind = [
+                            "id"       => $element['id'],
+                            "dateupd"  => $element['dateupd']->getTimestamp(),
+                            "opertype" => $element['opertype'],
+                        ];
+                        $prepare->execute($bind);
+
+                        continue;
+                    }
+
+                    // получается, что это новая транзакция - заносим её
+                    $insert = $pdo->prepare("
+                        INSERT INTO `transactions` (
+                            `id`, `pursesrc`, `pursedest`, `type`, `purse`, `corrpurse`, `amount`, `comiss`, `opertype`, `wminvid`, `orderid`, `tranid`, `period`, `description`, `datecrt`, `dateupd`, `corrwm`, `rest`
+                        ) VALUES (
+                            :id, :pursesrc, :pursedest, :type, :purse, :corrpurse, :amount, :comiss, :opertype, :wminvid, :orderid, :tranid, :period, :desc, :datecrt, :dateupd, :corrwm, :rest
+                        )
                     ");
                     $bind = [
                         "id"        => $element['id'],
-                    ];
-                    $prepare->execute($bind);
-
-                    // обновляем саму транзакцию
-                    $prepare = $this->pdo->prepare("
-                        UPDATE `transactions` SET
-                            `dateupd` = :dateupd,
-                            `opertype` = :opertype
-                        WHERE
-                            `id` = :id
-                    ");
-                    $bind = [
-                        "id"        => $element['id'],
-                        "dateupd"   => $element['dateupd']->getTimestamp(),
+                        "pursesrc"  => $element['pursesrc'],
+                        "pursedest" => $element['pursedest'],
+                        "type"      => $element['type'],
+                        "purse"     => $purse['pursename'],
+                        "corrpurse" => $element['corrpurse'],
+                        "amount"    => $element['amount'],
+                        "comiss"    => $element['comiss'],
                         "opertype"  => $element['opertype'],
+                        "wminvid"   => $element['wminvid'],
+                        "orderid"   => $element['orderid'],
+                        "tranid"    => $element['tranid'],
+                        "period"    => $element['period'],
+                        "desc"      => $element['desc'],
+                        "datecrt"   => $element['datecrt']->getTimestamp(),
+                        "dateupd"   => $element['dateupd']->getTimestamp(),
+                        "corrwm"    => $element['corrwm'],
+                        "rest"      => $element['rest'],
                     ];
-                    $prepare->execute($bind);
+                    $insert->execute($bind);
 
-                    continue;
+                    // если это приходная операция - создаём событие
+                    if ($element['type'] == WMXml::TRANSAC_IN) {
+                        $type = ($element['opertype'] == WMXml::OPERTYPE_PROTECTION) ? self::EVENT_PROTECTION : self::EVENT_TRANSFER;
+                        $this->addEvent($element['id'], $element['datecrt']->getTimestamp(), $element['period'], $element['desc'], $type, $element['amount'], $element['pursesrc']);
+                    }
                 }
 
-                // получается, что это новая транзакция - заносим её
-                $insert = $this->pdo->prepare("
-                    INSERT INTO `transactions` (
-                        `id`,
-                        `pursesrc`,
-                        `pursedest`,
-                        `type`,
-                        `purse`,
-                        `corrpurse`,
-                        `amount`,
-                        `comiss`,
-                        `opertype`,
-                        `wminvid`,
-                        `orderid`,
-                        `tranid`,
-                        `period`,
-                        `description`,
-                        `datecrt`,
-                        `dateupd`,
-                        `corrwm`,
-                        `rest`
-                    ) VALUES (
-                        :id,
-                        :pursesrc,
-                        :pursedest,
-                        :type,
-                        :purse,
-                        :corrpurse,
-                        :amount,
-                        :comiss,
-                        :opertype,
-                        :wminvid,
-                        :orderid,
-                        :tranid,
-                        :period,
-                        :desc,
-                        :datecrt,
-                        :dateupd,
-                        :corrwm,
-                        :rest
-                    )
-                ");
-                $bind = [
-                    "id"        => $element['id'],
-                    "pursesrc"  => $element['pursesrc'],
-                    "pursedest" => $element['pursedest'],
-                    "type"      => $element['type'],
-                    "purse"     => $purse['pursename'],
-                    "corrpurse" => $element['corrpurse'],
-                    "amount"    => $element['amount'],
-                    "comiss"    => $element['comiss'],
-                    "opertype"  => $element['opertype'],
-                    "wminvid"   => $element['wminvid'],
-                    "orderid"   => $element['orderid'],
-                    "tranid"    => $element['tranid'],
-                    "period"    => $element['period'],
-                    "desc"      => $element['desc'],
-                    "datecrt"   => $element['datecrt']->getTimestamp(),
-                    "dateupd"   => $element['dateupd']->getTimestamp(),
-                    "corrwm"    => $element['corrwm'],
-                    "rest"      => $element['rest'],
-                ];
-                $insert->execute($bind);
-
-                // если это приходная операция - создаём событие
-                if ($element['type'] == WMXml::TRANSAC_IN) {
-                    $type = ($element['opertype'] == WMXml::OPERTYPE_PROTECTION) ? self::EVENT_PROTECTION : self::EVENT_TRANSFER;
-                    $this->addEvent($element['id'], $element['datecrt']->getTimestamp(), $element['period'], $element['desc'], $type, $element['amount'], $element['pursesrc']);
-                }
-            }
-
-            // если не нашли за чем следить, то дело за последней итерацией
-            if (empty($savetime) && !empty($lasttime)) {
-                $savetime = $lasttime;
-            }
-            // вообще не было итераций
-            else if (empty($savetime) && empty($lasttime)) {
-                $savetime = (new DateTime)->getTimestamp();
-            }
-
-            // сохраняем временную отметку, если она изменилась
-            if ($savetime != $times[$purse['pursename']][3]) {
-                $prepare = $this->pdo->prepare("
-                    UPDATE `purses_times` SET
-                        `time` = :time
-                    WHERE
-                        `pursename` = :pursename
-                            AND
-                        `xml_id` = '3'
-                ");
-                $prepare->bindValue(":time", $savetime);
-                $prepare->bindValue(":pursename", $purse['pursename']);
-                $prepare->execute();
-            }
-
-            /*
-                синхронизируем выписанные счета
-            */
-            // временная отметка, которую нужно сохранить
-            $savetime = null;
-            // временная отметка последнего элемента
-            $lasttime = null;
-
-            // запрашиваем новые счета
-            $time = ($times[$purse['pursename']][4]) ? new DateTime('@'.$times[$purse['pursename']][4]) : null;
-            try {
-                $wmxml = $this->wmxml->xml4($purse['pursename'], $time);
-                if ($wmxml['is_error']) {
-                    throw new Exception($wmxml['error_message'], $wmxml['error_code']);
-                }
-                $list = $wmxml['data'];
-            }
-            catch (Exception $e) {
-                throw new Exception("WMXml exception: " . $e->getMessage());
-            }
-
-            foreach ($list as $element) {
-                // в выписанных счетах: следим за неоплаченными счетами
-                if (
-                    $element['state'] == WMXml::STATE_NOPAY
-                    &&
-                    ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > (new DateTime)->getTimestamp()
-                    &&
-                    empty($savetime)
-                ) {
-                    // если это не первая итерация, то берём временной отсчёт с прошлого элемента
-                    $savetime = empty($lasttime) ? $element['datecrt']->getTimestamp() : $lasttime;
+                // если не нашли за чем следить, то дело за последней итерацией
+                if (empty($savetime) && !empty($lasttime)) {
+                    $savetime = $lasttime;
+                } // вообще не было итераций
+                else if (empty($savetime) && empty($lasttime)) {
+                    $savetime = (new DateTime)->getTimestamp();
                 }
 
-                // время последнего элемента
-                $lasttime = $element['datecrt']->getTimestamp();
-
-                // такой счёт уже есть в базе и его статус не изменился
-                if (
-                    isset($cache['outvoices'][$purse['pursename']][$element['id']])
-                    &&
-                    $cache['outvoices'][$purse['pursename']][$element['id']]['state'] == $element['state']
-                ) {
-                    continue;
-                }
-
-                // такой счёт уже есть в базе, но его статус изменился
-                if (
-                    isset($cache['outvoices'][$purse['pursename']][$element['id']])
-                    &&
-                    $cache['outvoices'][$purse['pursename']][$element['id']]['state'] != $element['state']
-                ) {
-                    // обновляем сам счёт
-                    $prepare = $this->pdo->prepare("
-                        UPDATE `outvoices` SET
-                            `dateupd` = :dateupd,
-                            `state` = :state,
-                            `wmtranid` = :wmtranid
+                // сохраняем временную отметку, если она изменилась
+                if ($savetime != $times[$purse['pursename']][3]) {
+                    $prepare = $pdo->prepare("
+                        UPDATE `purses_times` SET
+                            `time` = :time
                         WHERE
-                            `id` = :id
+                            `pursename` = :pursename
+                                AND
+                            `xml_id` = '3'
                     ");
-                    $prepare->bindValue(":id", $element['id']);
-                    $prepare->bindValue(":dateupd", $element['dateupd']->getTimestamp());
-                    $prepare->bindValue(":state", $element['state']);
-                    $prepare->bindValue(":wmtranid", $element['wmtranid']);
+                    $prepare->bindValue(":time", $savetime);
+                    $prepare->bindValue(":pursename", $purse['pursename']);
                     $prepare->execute();
-
-                    continue;
                 }
 
-                // получается, что это новый счёт - заносим его
-                $insert = $this->pdo->prepare("
-                    INSERT INTO `outvoices` (
-                        `id`,
-                        `orderid`,
-                        `storepurse`,
-                        `customerwmid`,
-                        `customerpurse`,
-                        `amount`,
-                        `datecrt`,
-                        `dateupd`,
-                        `state`,
-                        `address`,
-                        `description`,
-                        `period`,
-                        `expiration`,
-                        `wmtranid`
-                    ) VALUES (
-                        :id,
-                        :orderid,
-                        :storepurse,
-                        :customerwmid,
-                        :customerpurse,
-                        :amount,
-                        :datecrt,
-                        :dateupd,
-                        :state,
-                        :address,
-                        :desc,
-                        :period,
-                        :expiration,
-                        :wmtranid
-                    )
-                ");
-                $bind = [
-                    "id"            => $element['id'],
-                    "orderid"       => $element['orderid'],
-                    "storepurse"    => $element['storepurse'],
-                    "customerwmid"  => $element['customerwmid'],
-                    "customerpurse" => $element['customerpurse'],
-                    "amount"        => $element['amount'],
-                    "datecrt"       => $element['datecrt']->getTimestamp(),
-                    "dateupd"       => $element['dateupd']->getTimestamp(),
-                    "state"         => $element['state'],
-                    "address"       => $element['address'],
-                    "desc"          => $element['desc'],
-                    "period"        => $element['period'],
-                    "expiration"    => $element['expiration'],
-                    "wmtranid"      => $element['wmtranid'],
-                ];
-                $insert->execute($bind);
-            }
+                /*
+                    синхронизируем выписанные счета
+                */
+                // временная отметка, которую нужно сохранить
+                $savetime = null;
+                // временная отметка последнего элемента
+                $lasttime = null;
 
-            // если не нашли за чем следить, то дело за последней итерацией
-            if (empty($savetime) && !empty($lasttime)) {
-                $savetime = $lasttime;
-            }
-            // вообще не было итераций
-            else if (empty($savetime) && empty($lasttime)) {
-                $savetime = (new DateTime)->getTimestamp();
-            }
+                // запрашиваем новые счета
+                $time = ($times[$purse['pursename']][4]) ? new DateTime('@' . $times[$purse['pursename']][4]) : null;
+                try {
+                    $result = $wmxml->xml4($purse['pursename'], $time);
+                    if ($result['is_error']) {
+                        throw new Exception($result['error_message'], $result['error_code']);
+                    }
+                    $list = $result['data'];
+                } catch (Exception $e) {
+                    throw new Exception("WMXml exception: " . $e->getMessage());
+                }
 
-            // сохраняем временную отметку, если она изменилась
-            if ($savetime != $times[$purse['pursename']][4]) {
-                $prepare = $this->pdo->prepare("
-                    UPDATE `purses_times` SET
-                        `time` = :time
-                    WHERE
-                        `pursename` = :pursename
-                            AND
-                        `xml_id` = 4
-                ");
-                $prepare->bindValue(":time", $savetime);
-                $prepare->bindValue(":pursename", $purse['pursename']);
-                $prepare->execute();
+                foreach ($list as $element) {
+                    // в выписанных счетах: следим за неоплаченными счетами
+                    if (
+                        $element['state'] == WMXml::STATE_NOPAY
+                        &&
+                        ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > (new DateTime)->getTimestamp()
+                        &&
+                        empty($savetime)
+                    ) {
+                        // если это не первая итерация, то берём временной отсчёт с прошлого элемента
+                        $savetime = empty($lasttime) ? $element['datecrt']->getTimestamp() : $lasttime;
+                    }
+
+                    // время последнего элемента
+                    $lasttime = $element['datecrt']->getTimestamp();
+
+                    // такой счёт уже есть в базе и его статус не изменился
+                    if (
+                        isset($cache['outvoices'][$purse['pursename']][$element['id']])
+                        &&
+                        $cache['outvoices'][$purse['pursename']][$element['id']]['state'] == $element['state']
+                    ) {
+                        continue;
+                    }
+
+                    // такой счёт уже есть в базе, но его статус изменился
+                    if (
+                        isset($cache['outvoices'][$purse['pursename']][$element['id']])
+                        &&
+                        $cache['outvoices'][$purse['pursename']][$element['id']]['state'] != $element['state']
+                    ) {
+                        // обновляем сам счёт
+                        $prepare = $pdo->prepare("
+                            UPDATE `outvoices` SET
+                                `dateupd` = :dateupd,
+                                `state` = :state,
+                                `wmtranid` = :wmtranid
+                            WHERE
+                                `id` = :id
+                        ");
+                        $prepare->bindValue(":id", $element['id']);
+                        $prepare->bindValue(":dateupd", $element['dateupd']->getTimestamp());
+                        $prepare->bindValue(":state", $element['state']);
+                        $prepare->bindValue(":wmtranid", $element['wmtranid']);
+                        $prepare->execute();
+
+                        continue;
+                    }
+
+                    // получается, что это новый счёт - заносим его
+                    $insert = $pdo->prepare("
+                        INSERT INTO `outvoices` (
+                            `id`, `orderid`, `storepurse`, `customerwmid`, `customerpurse`, `amount`, `datecrt`, `dateupd`, `state`, `address`, `description`, `period`, `expiration`, `wmtranid`
+                        ) VALUES (
+                            :id, :orderid, :storepurse, :customerwmid, :customerpurse, :amount, :datecrt, :dateupd, :state, :address, :desc, :period, :expiration, :wmtranid
+                        )
+                    ");
+                    $bind = [
+                        "id"            => $element['id'],
+                        "orderid"       => $element['orderid'],
+                        "storepurse"    => $element['storepurse'],
+                        "customerwmid"  => $element['customerwmid'],
+                        "customerpurse" => $element['customerpurse'],
+                        "amount"        => $element['amount'],
+                        "datecrt"       => $element['datecrt']->getTimestamp(),
+                        "dateupd"       => $element['dateupd']->getTimestamp(),
+                        "state"         => $element['state'],
+                        "address"       => $element['address'],
+                        "desc"          => $element['desc'],
+                        "period"        => $element['period'],
+                        "expiration"    => $element['expiration'],
+                        "wmtranid"      => $element['wmtranid'],
+                    ];
+                    $insert->execute($bind);
+                }
+
+                // если не нашли за чем следить, то дело за последней итерацией
+                if (empty($savetime) && !empty($lasttime)) {
+                    $savetime = $lasttime;
+                } // вообще не было итераций
+                else if (empty($savetime) && empty($lasttime)) {
+                    $savetime = (new DateTime)->getTimestamp();
+                }
+
+                // сохраняем временную отметку, если она изменилась
+                if ($savetime != $times[$purse['pursename']][4]) {
+                    $prepare = $pdo->prepare("
+                        UPDATE `purses_times` SET
+                            `time` = :time
+                        WHERE
+                            `pursename` = :pursename
+                                AND
+                            `xml_id` = 4
+                    ");
+                    $prepare->bindValue(":time", $savetime);
+                    $prepare->bindValue(":pursename", $purse['pursename']);
+                    $prepare->execute();
+                }
+
+                posix_kill(posix_getpid(), SIGTERM);
             }
+        }
+
+        foreach ($pids as $pid) {
+            pcntl_waitpid($pid, $status);
         }
 
         /*
@@ -522,15 +477,14 @@ class commands
         $lasttime = null;
 
         // вытаскиваем список счетов, которые выписали нам
-        $time = ($this->system['xml10time']) ? new DateTime('@'.$this->system['xml10time']) : null;
+        $time = ($this->system['xml10time']) ? new DateTime('@' . $this->system['xml10time']) : null;
         try {
             $wmxml = $this->wmxml->xml10(null, 0, $time);
             if ($wmxml['is_error']) {
                 throw new Exception($wmxml['error_message'], $wmxml['error_code']);
             }
             $list = $wmxml['data'];
-        }
-        catch (Exception $e) {
+        } catch (Exception $e) {
             throw new Exception("WMXml exception: " . $e->getMessage());
         }
 
@@ -655,8 +609,7 @@ class commands
         // если не нашли за чем следить, то дело за последней итерацией
         if (empty($savetime) && !empty($lasttime)) {
             $savetime = $lasttime;
-        }
-        // вообще не было итераций
+        } // вообще не было итераций
         else if (empty($savetime) && empty($lasttime)) {
             $savetime = (new DateTime)->getTimestamp();
         }
@@ -714,8 +667,7 @@ class commands
         // собираем информацию о состоянии кошельков
         try {
             $purses = $this->wmxml->xml9();
-        }
-        catch (Exception $e) {
+        } catch (Exception $e) {
             throw new Exception($e->getMessage());
         }
 
@@ -887,12 +839,10 @@ class commands
                 if ($wmxml['is_error']) {
                     $is_error = true;
                     $message = $wmxml['error_message'];
-                }
-                else {
+                } else {
                     $data = $wmxml['data'];
                 }
-            }
-            catch (Exception $e) {
+            } catch (Exception $e) {
                 throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
@@ -939,12 +889,10 @@ class commands
                 if ($wmxml['is_error']) {
                     $is_error = true;
                     $message = $wmxml['error_message'];
-                }
-                else {
+                } else {
                     $data = $wmxml['data'];
                 }
-            }
-            catch (Exception $e) {
+            } catch (Exception $e) {
                 throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
@@ -1030,12 +978,10 @@ class commands
                 if ($wmxml['is_error']) {
                     $is_error = true;
                     $message = $wmxml['error_message'];
-                }
-                else {
+                } else {
                     $data = $wmxml['data'];
                 }
-            }
-            catch (Exception $e) {
+            } catch (Exception $e) {
                 throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
@@ -1091,12 +1037,10 @@ class commands
                 if ($wmxml['is_error']) {
                     $is_error = true;
                     $message = $wmxml['error_message'];
-                }
-                else {
+                } else {
                     $data = $wmxml['data'];
                 }
-            }
-            catch (Exception $e) {
+            } catch (Exception $e) {
                 throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
@@ -1171,6 +1115,7 @@ class commands
      * passportCommand(): просмотр информации о кошельке или wmid
      * @param  string $search кошелёк или wmid
      * @return array
+     * @throws Exception
      */
     public function passportCommand($search)
     {
@@ -1198,20 +1143,18 @@ class commands
                 if ($wmxml['is_error']) {
                     $is_error = true;
                     $message = $wmxml['error_message'];
-                }
-                else {
+                } else {
                     $data = $wmxml['data'];
                     // собираем BL и TL для каждого WMID, прикреплённого к аттестату
                     foreach ($data['wmids'] as $wmid => $array) {
                         try {
                             $data['wmids'][$wmid]['bl'] = $this->wmxml->getBl($wmid);
                             $data['wmids'][$wmid]['tl'] = $this->wmxml->getTl($wmid);
+                        } catch (Exception $e) {
                         }
-                        catch(Exception $e) {}
                     }
                 }
-            }
-            catch (Exception $e) {
+            } catch (Exception $e) {
                 throw new Exception("WMXml exception: " . $e->getMessage());
             }
         }
@@ -1396,5 +1339,24 @@ class commands
 
         // возвращаем обозначение типа WMZ, WMR,...
         return "WM" . $letter;
+    }
+
+    private function getPdoConnection()
+    {
+        // создаём объект PDO
+        $pdo = new PDO(
+            $this->config['pdo']['dsn'],
+            $this->config['pdo']['user'],
+            $this->config['pdo']['password'],
+            [
+                PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+            ]
+        );
+        if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) == "mysql") {
+            $pdo->exec("SET NAMES UTF8");
+        }
+
+        return $pdo;
     }
 }

@@ -47,22 +47,8 @@ try {
 		]
 	);
 
-	// создаём объект PDO
-	$pdo = new PDO(
-		$config['pdo']['dsn'],
-		$config['pdo']['user'],
-		$config['pdo']['password'],
-		[
-			PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-			PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-		]
-	);
-	if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) == "mysql") {
-		$pdo->exec("SET NAMES UTF8");
-	}
-
 	// создаём объект ядра комманд
-	$commands = new commands($wmxml, $pdo);
+	$commands = new commands($wmxml, $config);
 
 	//создаём объект консоли
 	$console = new console();
