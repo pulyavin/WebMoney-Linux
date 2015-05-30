@@ -1,0 +1,8 @@
+{
+	"require": {
+		"php": ">=5.3",
+		"ext-curl": "*",
+        "ext-mbstring": "*",
+        "pulyavin/wmxml": "~1.0"
+	}
+}

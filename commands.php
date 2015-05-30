@@ -1,5 +1,6 @@
 <?php
-use \pulyavin\WebMoney\WMXml;
+use \pulyavin\wmxml\WMXml;
+use \pulyavin\wmxml\Constants;
 
 class commands
 {
@@ -225,7 +226,7 @@ class commands
                 foreach ($list as $element) {
                     // в транзакциях: следим за измением операций по протекции
                     if (
-                        $element['opertype'] == WMXml::OPERTYPE_PROTECTION
+                        $element['opertype'] == Constants::OPERTYPE_PROTECTION
                         &&
                         empty($savetime)
                     ) {
@@ -312,8 +313,8 @@ class commands
                     $insert->execute($bind);
 
                     // если это приходная операция - создаём событие
-                    if ($element['type'] == WMXml::TRANSAC_IN) {
-                        $type = ($element['opertype'] == WMXml::OPERTYPE_PROTECTION) ? self::EVENT_PROTECTION : self::EVENT_TRANSFER;
+                    if ($element['type'] == Constants::TRANSAC_IN) {
+                        $type = ($element['opertype'] == Constants::OPERTYPE_PROTECTION) ? self::EVENT_PROTECTION : self::EVENT_TRANSFER;
                         $this->addEvent($element['id'], $element['datecrt']->getTimestamp(), $element['period'], $element['desc'], $type, $element['amount'], $element['pursesrc']);
                     }
                 }
@@ -364,7 +365,7 @@ class commands
                 foreach ($list as $element) {
                     // в выписанных счетах: следим за неоплаченными счетами
                     if (
-                        $element['state'] == WMXml::STATE_NOPAY
+                        $element['state'] == Constants::STATE_NOPAY
                         &&
                         ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > (new DateTime)->getTimestamp()
                         &&
@@ -491,7 +492,7 @@ class commands
         foreach ($list as $element) {
             // в полученных счетах: следим за неоплаченными счетами, которые не истекли по времени
             if (
-                $element['state'] == WMXml::STATE_NOPAY
+                $element['state'] == Constants::STATE_NOPAY
                 &&
                 ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > (new DateTime)->getTimestamp()
                 &&
@@ -598,7 +599,7 @@ class commands
 
             // и создаём событие, если счёт не оплаченный и время его действия не истекло
             if (
-                $element['state'] == WMXml::STATE_NOPAY
+                $element['state'] == Constants::STATE_NOPAY
                 &&
                 ($element['datecrt']->getTimestamp() + $element['expiration'] * 24 * 60 * 60) > time()
             ) {
@@ -871,7 +872,7 @@ class commands
         $is_error = false;
         $message = "";
 
-        if ($transac['opertype'] != WMXml::OPERTYPE_PROTECTION) {
+        if ($transac['opertype'] != Constants::OPERTYPE_PROTECTION) {
             $is_error = true;
             $message = "Транзация не по протекции";
         } else if (empty($transac)) {

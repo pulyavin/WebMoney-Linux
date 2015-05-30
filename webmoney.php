@@ -6,19 +6,11 @@ require_once("shell.php");
 // парсим файл конфигурации
 $config = parse_ini_file("config.ini", true);
 
-// подгружаем библиотеку wmxml
-require_once($config['vendors']['wmxml']);
+require_once("./vendor/autoload.php");
+require_once("./console/console.php");
 
-// подгружаем библиотеку console
-require_once($config['vendors']['console']);
-
-// подгружаем библиотеку php-wmsigner
-require_once($config['vendors']['signer']);
-
-use \pulyavin\WebMoney\WMXml as WMXml;
-use \baibaratsky\WebMoney\Signer as Signer;
-
-require_once("./vendors/wmxml/Exception.php");
+use pulyavin\wmxml\WMXml as WMXml;
+use baibaratsky\WebMoney\Signer as Signer;
 
 try {
 	// будем работать с классом Signer на PHP
@@ -35,7 +27,7 @@ try {
 	}
 
 	// создаём объект WebMoney XML API
-	$wmxml = new wmxml(
+	$wmxml = new WMXml(
 		"classic",
 		[
 			"wmid"     => $config['main']['wmid'],
