@@ -1,15 +1,14 @@
 #!/usr/bin/env php
 <?php
-require_once("commands.php");
-require_once("shell.php");
-
 // парсим файл конфигурации
 $config = parse_ini_file("config.ini", true);
 
 require_once("./vendor/autoload.php");
-require_once("./console/console.php");
 
+use pulyavin\wmkeeper\Commands;
+use pulyavin\wmkeeper\Shell;
 use pulyavin\wmxml\WMXml as WMXml;
+use pulyavin\console\Console as Console;
 use baibaratsky\WebMoney\Signer as Signer;
 
 try {
@@ -32,7 +31,6 @@ try {
 		[
 			"wmid"     => $config['main']['wmid'],
 			"wmsigner" => $wmsigner,
-			"rootca"   => $config['paths']['rootca'],
 			"tranid"  => $config['paths']['tranid'],
 			"connect"  => $config['curl']['connect'],
 			"timeout"  => $config['curl']['timeout']
@@ -40,14 +38,13 @@ try {
 	);
 
 	// создаём объект ядра комманд
-	$commands = new commands($wmxml, $config);
+	$commands = new Commands($wmxml, $config);
 
 	//создаём объект консоли
-	$console = new console();
+	$console = new Console();
 
 	// запускаем shell
-	shell::init($commands, $console)->start();
+    Shell::init($commands, $console)->start();
 } catch (Exception $e) {
 	echo $e->getMessage();
 }
-?>

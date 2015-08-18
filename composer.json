@@ -1,8 +1,15 @@
 {
-	"require": {
-		"php": ">=5.3",
-		"ext-curl": "*",
-        "ext-mbstring": "*",
-        "pulyavin/wmxml": "~1.0"
-	}
+  "require": {
+      "php": ">=5.3",
+      "ext-curl": "*",
+      "ext-mbstring": "*",
+      "pulyavin/wmxml": "~1.0",
+      "pulyavin/console": "~0.1"
+  },
+
+  "autoload": {
+    "psr-4": {
+      "pulyavin\\wmkeeper\\": ""
+    }
+  }
 }

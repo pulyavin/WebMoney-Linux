@@ -1,8 +1,12 @@
-<?php
+<?php namespace pulyavin\wmkeeper;
+
+use DateTime;
+use Exception;
+use PDO;
 use \pulyavin\wmxml\WMXml;
 use \pulyavin\wmxml\Constants;
 
-class commands
+class Commands
 {
     // Dependency Injection
     private $wmxml;

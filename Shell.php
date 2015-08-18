@@ -1,5 +1,10 @@
-<?php
-class shell {
+<?php namespace pulyavin\wmkeeper;
+
+use DateTime;
+use Exception;
+use pulyavin\console\Console;
+
+class Shell {
 	// представление даты
 	public static $datePattern = "Ymd H:i:s";
 
@@ -7,12 +12,12 @@ class shell {
 	private $commands;
 	private $console;
 
-	private function __construct(commands $commands, console $console) {
+	private function __construct(Commands $commands, Console $console) {
 		$this->commands = $commands;
 		$this->console = $console;
 	}
 
-	public static function init(commands $commands, console $console) {
+	public static function init(Commands $commands, Console $console) {
 		if (!self::$sceleton) {
 			self::$sceleton = new self($commands, $console);
 		}
@@ -277,7 +282,7 @@ class shell {
 
 			$this->console
 				->text(" ")
-				->text(commands::typePurse($purse['pursename'], true))
+				->text(Commands::typePurse($purse['pursename'], true))
 				->stdout(null, true);
 		}
 	}
@@ -326,7 +331,7 @@ class shell {
 				->style('green', 'bold')
 				->text($command['data']['amount'])
 				->text(" ")
-				->text(commands::typePurse($command['data']['pursesrc'], true))
+				->text(Commands::typePurse($command['data']['pursesrc'], true))
 				->style()
 				->stdout(null, true);
 			$this->console
@@ -343,7 +348,7 @@ class shell {
 				->style(null, 'bold')
 				->text($command['data']['comiss'])
 				->text(" ")
-				->text(commands::typePurse($command['data']['pursesrc'], true))
+				->text(Commands::typePurse($command['data']['pursesrc'], true))
 				->style()
 				->stdout(null, true);
 			$this->console
@@ -389,7 +394,7 @@ class shell {
 				->style('green', 'bold')
 				->text($command['data']['amount'])
 				->text(" ")
-				->text(commands::typePurse($command['data']['storepurse'], true))
+				->text(Commands::typePurse($command['data']['storepurse'], true))
 				->style()
 				->text(" на ")
 				->style('green', 'bold')
@@ -432,7 +437,7 @@ class shell {
 				->style('green', 'bold')
 				->text($command['data']['amount'])
 				->text(" ")
-				->text(commands::typePurse($command['data']['pursesrc'], true))
+				->text(Commands::typePurse($command['data']['pursesrc'], true))
 				->style()
 				->stdout(null, true);
 			$this->console
@@ -449,7 +454,7 @@ class shell {
 				->style(null, 'bold')
 				->text($command['data']['comiss'])
 				->text(" ")
-				->text(commands::typePurse($command['data']['pursesrc'], true))
+				->text(Commands::typePurse($command['data']['pursesrc'], true))
 				->style()
 				->stdout(null, true);
 			$this->console
@@ -513,13 +518,13 @@ class shell {
 				->column(15)
 				->text("[");
 
-			if ($event['type'] == commands::EVENT_TRANSFER) {
+			if ($event['type'] == Commands::EVENT_TRANSFER) {
 				$this->console
 					->style('green', 'bold')
 					->text("перевод")
 					->style();
 			}
-			else if ($event['type'] == commands::EVENT_PROTECTION) {
+			else if ($event['type'] == Commands::EVENT_PROTECTION) {
 				$this->console
 					->style('yellow', 'bold')
 					->text("протекция")
