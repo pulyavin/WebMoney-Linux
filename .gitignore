@@ -1,4 +1,4 @@
-config.ini
-.idea
-wmsigner
-vendor
+/config.ini
+/.idea
+/wmsigner
+/vendor
